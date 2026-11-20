@@ -1489,9 +1489,9 @@ fn materialize_component(
         ),
         Component::AvatarImage(_) => components::avatar::orphan("AvatarImage"),
         Component::AvatarFallback => components::avatar::orphan("AvatarFallback"),
-        Component::WebView(url) => {
+        Component::WebView(spec) => {
             warn_unhonoured_a11y(&behavior, "webview", &[]);
-            components::webview::webview(element_id(id, behavior.key.clone()), url, refinement)
+            components::webview::webview(element_id(id, behavior.key.clone()), spec, refinement)
         }
         Component::Image(path) => {
             warn_unhonoured_a11y(&behavior, "image", &[]);

@@ -5,17 +5,19 @@ use gpui::{
     LayoutId, Pixels, Refineable as _, Style, StyleRefinement, Window,
 };
 
+use crate::spec::WebViewSpec;
+
 pub(in crate::materialize) fn webview(
     id: ElementId,
-    url: String,
+    spec: WebViewSpec,
     style: StyleRefinement,
 ) -> AnyElement {
-    NativeWebView { id, url, style }.into_any_element()
+    NativeWebView { id, spec, style }.into_any_element()
 }
 
 struct NativeWebView {
     id: ElementId,
-    url: String,
+    spec: WebViewSpec,
     style: StyleRefinement,
 }
 
@@ -72,24 +74,38 @@ impl Element for NativeWebView {
         window: &mut Window,
         _: &mut App,
     ) {
+        let visible = bounds.intersect(&window.content_mask().bounds);
         #[cfg(target_os = "macos")]
         if let Some(id) = id {
-            native::show(id, &self.url, bounds, window);
+            native::show(id, &self.spec, visible, window);
         }
         #[cfg(not(target_os = "macos"))]
-        let _ = (id, bounds, window);
+        {
+            let _ = (id, visible, window);
+            unsupported();
+        }
     }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn unsupported() {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| tracing::warn!("webview: only macOS shows web views; this one stays empty"));
 }
 
 #[cfg(target_os = "macos")]
 mod native {
     use std::{cell::RefCell, collections::HashMap, mem::ManuallyDrop};
 
-    use gpui::{Bounds, GlobalElementId, Pixels, Window};
+    use gpui::{Bounds, GlobalElementId, Pixels, Window, WindowId};
     use wry::{
         Rect, WebView, WebViewBuilder,
         dpi::{LogicalPosition, LogicalSize},
     };
+
+    use crate::spec::WebViewSpec;
+
+    type Key = (WindowId, GlobalElementId);
 
     struct Shown {
         view: WebView,
@@ -98,20 +114,34 @@ mod native {
     }
 
     thread_local! {
-        static VIEWS: ManuallyDrop<RefCell<HashMap<GlobalElementId, Shown>>> = ManuallyDrop::new(RefCell::new(HashMap::new()));
+        static VIEWS: ManuallyDrop<RefCell<HashMap<Key, Shown>>> = ManuallyDrop::new(RefCell::new(HashMap::new()));
     }
 
-    struct Painted(GlobalElementId);
+    struct Painted {
+        key: Key,
+        keep: bool,
+    }
 
     impl Drop for Painted {
         fn drop(&mut self) {
             let _ = VIEWS.try_with(|views| {
-                if let Some(shown) = views.borrow().get(&self.0) {
-                    let _ = shown.view.set_visible(false);
-                    let _ = shown.view.focus_parent();
+                let Ok(mut views) = views.try_borrow_mut() else {
+                    return;
+                };
+                if self.keep {
+                    if let Some(shown) = views.get(&self.key) {
+                        hide(&shown.view);
+                    }
+                } else if let Some(shown) = views.remove(&self.key) {
+                    hide(&shown.view);
                 }
             });
         }
+    }
+
+    fn hide(view: &WebView) {
+        let _ = view.set_visible(false);
+        let _ = view.focus_parent();
     }
 
     fn rect(bounds: Bounds<Pixels>) -> Rect {
@@ -126,35 +156,38 @@ mod native {
         }
     }
 
-    pub(super) fn show(id: &GlobalElementId, url: &str, bounds: Bounds<Pixels>, window: &mut Window) {
+    pub(super) fn show(id: &GlobalElementId, spec: &WebViewSpec, bounds: Bounds<Pixels>, window: &mut Window) {
+        let key = (window.window_handle().window_id(), id.clone());
         window.with_element_state::<Painted, _>(id, |painted, window| {
-            let painted = painted.unwrap_or_else(|| Painted(id.clone()));
+            let mut painted = painted.unwrap_or_else(|| Painted { key: key.clone(), keep: spec.keep });
+            painted.keep = spec.keep;
             VIEWS.with(|views| {
                 let mut views = views.borrow_mut();
-                if let Some(shown) = views.get_mut(id) {
-                    if shown.url != url {
-                        let _ = shown.view.load_url(url);
-                        shown.url = url.to_owned();
+                if let Some(shown) = views.get_mut(&key) {
+                    if shown.url != spec.url {
+                        let _ = shown.view.load_url(&spec.url);
+                        shown.url = spec.url.clone();
                     }
                     if shown.bounds != bounds {
                         let _ = shown.view.set_bounds(rect(bounds));
                         shown.bounds = bounds;
                     }
-                    let _ = shown.view.set_visible(true);
+                    let _ = shown.view.set_visible(!bounds.is_empty());
                     return;
                 }
                 match WebViewBuilder::new()
-                    .with_url(url)
+                    .with_url(&spec.url)
                     .with_bounds(rect(bounds))
-                    .with_devtools(true)
+                    .with_visible(!bounds.is_empty())
+                    .with_devtools(cfg!(debug_assertions))
                     .build_as_child(&*window)
                 {
                     Ok(view) => {
                         views.insert(
-                            id.clone(),
+                            key.clone(),
                             Shown {
                                 view,
-                                url: url.to_owned(),
+                                url: spec.url.clone(),
                                 bounds,
                             },
                         );

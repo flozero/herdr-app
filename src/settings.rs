@@ -529,7 +529,7 @@ pub struct Settings {
 }
 
 fn default_web_view_keys() -> Vec<String> {
-    vec!["cmd-e".into(), "cmd-q".into(), "cmd-shift-w".into()]
+    ["cmd-q", "cmd-shift-w", "ctrl-tab", "ctrl-shift-tab"].map(String::from).to_vec()
 }
 
 fn is_default_web_view_keys(keys: &Vec<String>) -> bool {

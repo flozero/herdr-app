@@ -2612,6 +2612,9 @@ unsafe fn send_to_web_view(this: &Object, native_event: id) {
                     (true, false, "c") => Some(sel!(copy:)),
                     (true, false, "v") => Some(sel!(paste:)),
                     (true, false, "x") => Some(sel!(cut:)),
+                    (true, false, "a") => Some(sel!(selectAll:)),
+                    (true, false, "z") => Some(sel!(undo:)),
+                    (true, true, "z") => Some(sel!(redo:)),
                     _ => None,
                 }
             }
@@ -2629,6 +2632,9 @@ unsafe fn send_to_web_view(this: &Object, native_event: id) {
 }
 
 unsafe fn web_view_has_keyboard() -> bool {
+    let Some(web_view_class) = Class::get("WKWebView") else {
+        return false;
+    };
     unsafe {
         let app: id = msg_send![class!(NSApplication), sharedApplication];
         let window: id = msg_send![app, keyWindow];
@@ -2636,23 +2642,19 @@ unsafe fn web_view_has_keyboard() -> bool {
             return false;
         }
         let mut view: id = msg_send![window, firstResponder];
-        if view == nil {
-            return false;
-        }
-        let is_view: BOOL = msg_send![view, isKindOfClass: class!(NSView)];
-        let class: *const Class = msg_send![view, class];
-        if is_view != YES || class == VIEW_CLASS {
-            return false;
-        }
         loop {
-            view = msg_send![view, superview];
             if view == nil {
                 return false;
             }
-            let class: *const Class = msg_send![view, class];
-            if class == VIEW_CLASS {
+            let is_view: BOOL = msg_send![view, isKindOfClass: class!(NSView)];
+            if is_view != YES {
+                return false;
+            }
+            let is_web_view: BOOL = msg_send![view, isKindOfClass: web_view_class];
+            if is_web_view == YES {
                 return true;
             }
+            view = msg_send![view, superview];
         }
     }
 }
