@@ -4889,6 +4889,7 @@ impl AppWindow {
     }
 
     fn render_overlays(&self, viewport: Size<Pixels>, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        gpui_shell::web_view::clear_covers();
         let mut windows = Vec::new();
         let mut overlays = Vec::new();
         let mut toasts = Vec::new();
@@ -4936,6 +4937,7 @@ impl AppWindow {
                     cx.stop_propagation();
                 })))
                 .when(o.kind != OverlayKind::Window, |d| d.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
+                .when(o.kind != OverlayKind::Toast, |d| d.child(gpui_shell::web_view::cover()))
                 .child(content);
             match o.kind {
                 OverlayKind::Window => windows.push(self.render_window(o, body, viewport, cx)),

@@ -44,6 +44,21 @@ impl OptionAsAlt {
     }
 }
 
+thread_local! {
+    static WEB_VIEW_KEYS: std::cell::RefCell<Vec<gpui::Keystroke>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The shortcuts the window keeps while a native web view inside it has the keyboard.
+pub fn set_web_view_keys(keys: Vec<gpui::Keystroke>) {
+    WEB_VIEW_KEYS.set(keys);
+}
+
+pub(crate) fn web_view_keeps(keystroke: &gpui::Keystroke) -> bool {
+    WEB_VIEW_KEYS.with_borrow(|keys| {
+        keys.iter().any(|kept| kept.modifiers == keystroke.modifiers && kept.key == keystroke.key)
+    })
+}
+
 /// `None` follows the keyboard layout; `Some` selects the Option keys to use as Alt.
 pub fn set_option_as_alt(value: Option<OptionAsAlt>) {
     OPTION_AS_ALT.set(value);

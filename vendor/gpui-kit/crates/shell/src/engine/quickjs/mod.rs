@@ -1123,6 +1123,7 @@ pub(crate) mod exports {
         "div",
         "svg",
         "image",
+        "webview",
         // GPUI's own lazy lists. Base's virtual lists live in `gpui-base`;
         // these are GPUI's, and are exported where `div` is.
         "list",
@@ -7125,6 +7126,7 @@ globalThis.__gpui = (() => {
     v_flex: () => element(__v_flex()),
     svg: (path) => element(__svg(String(path))),
     image: (path) => element(__image(String(path))),
+    webview: (url, options) => element(__webview(String(url), Boolean(options?.keep))),
     PathBuilder: {
       fill: () => pathBuilder(true, 0),
       stroke: (width) => pathBuilder(false, finitePositive(width, "stroke width")),
@@ -7581,6 +7583,7 @@ impl ShellRuntime {
             )?;
             text_constructor(&globals, "__svg", runtime.clone(), Component::Svg)?;
             text_constructor(&globals, "__image", runtime.clone(), Component::Image)?;
+            web_view_constructor(&globals, runtime.clone())?;
             text_constructor(
                 &globals,
                 "__accordion",
@@ -9144,6 +9147,19 @@ fn text_constructor(
         name,
         Func::from(move |ctx: Ctx<'_>, value: String| -> JsResult<SpecId> {
             Ok(upgrade(&runtime, &ctx)?.push_node(build(value)))
+        }),
+    )
+}
+
+/// `webview(url, { keep })`, refusing anything but an `http` or `https` page.
+fn web_view_constructor(globals: &Object<'_>, runtime: Weak<ShellRuntime>) -> JsResult<()> {
+    globals.set(
+        "__webview",
+        Func::from(move |ctx: Ctx<'_>, url: String, keep: bool| -> JsResult<SpecId> {
+            if !crate::spec::is_web_url(&url) {
+                return Err(Exception::throw_type(&ctx, &format!("webview(url) needs an http or https URL, got {url:?}")));
+            }
+            Ok(upgrade(&runtime, &ctx)?.push_node(Component::WebView(crate::spec::WebViewSpec { url, keep })))
         }),
     )
 }

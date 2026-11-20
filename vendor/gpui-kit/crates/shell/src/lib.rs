@@ -100,6 +100,7 @@ pub(crate) mod theme_tokens;
 mod typings;
 pub(crate) mod value;
 pub mod view;
+pub mod web_view;
 pub(crate) mod watch;
 pub use watch::application_file_counts;
 

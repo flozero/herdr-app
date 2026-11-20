@@ -2115,6 +2115,17 @@ const ELEMENTS: &str = r#"
    */
   export function image(path: string): NativeElement;
 
+  /**
+   * A native web view showing an `http`/`https` URL over the element's bounds,
+   * clipped to its scroll container. Any other URL throws a `TypeError`.
+   *
+   * It is drawn above the window, so popups, menus and toasts can't cover it.
+   * It is destroyed when it is no longer shown; with `{ keep: true }` and an
+   * `id`, it is hidden instead and comes back with its page as it was.
+   * macOS only: elsewhere it stays empty.
+   */
+  export function webview(url: string, options?: { keep?: boolean }): NativeElement;
+
   /** The visible items, as a half-open `[start, end)` interval. */
   export interface ItemRange {
     start: number;
