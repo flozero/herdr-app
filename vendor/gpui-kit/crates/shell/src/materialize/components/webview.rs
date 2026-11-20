@@ -74,7 +74,8 @@ impl Element for NativeWebView {
         window: &mut Window,
         _: &mut App,
     ) {
-        let visible = bounds.intersect(&window.content_mask().bounds);
+        let clipped = bounds.intersect(&window.content_mask().bounds);
+        let visible = if crate::web_view::covered(clipped) { Bounds::default() } else { clipped };
         #[cfg(target_os = "macos")]
         if let Some(id) = id {
             native::show(id, &self.spec, visible, window);
@@ -172,7 +173,11 @@ mod native {
                         let _ = shown.view.set_bounds(rect(bounds));
                         shown.bounds = bounds;
                     }
-                    let _ = shown.view.set_visible(!bounds.is_empty());
+                    if bounds.is_empty() {
+                        hide(&shown.view);
+                    } else {
+                        let _ = shown.view.set_visible(true);
+                    }
                     return;
                 }
                 match WebViewBuilder::new()
