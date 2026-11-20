@@ -1592,6 +1592,11 @@ extern "C" fn open_urls(this: &mut Object, _: Sel, _: id, urls: id) {
 
 extern "C" fn handle_menu_item(this: &mut Object, _: Sel, item: id) {
     unsafe {
+        let app: id = msg_send![class!(NSApplication), sharedApplication];
+        let event: id = msg_send![app, currentEvent];
+        if crate::window::web_view_takes(event) {
+            return;
+        }
         let platform = get_mac_platform(this);
         let mut lock = platform.0.lock();
         if let Some(mut callback) = lock.menu_command.take() {

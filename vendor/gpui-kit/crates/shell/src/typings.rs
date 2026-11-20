@@ -2115,6 +2115,14 @@ const ELEMENTS: &str = r#"
    */
   export function image(path: string): NativeElement;
 
+  /**
+   * A native web view showing an `http`/`https` URL over the element's bounds.
+   *
+   * It is drawn above the window, so nothing else can cover it; give it an
+   * `id` to keep the page alive while it is not shown. macOS only.
+   */
+  export function webview(url: string): NativeElement;
+
   /** The visible items, as a half-open `[start, end)` interval. */
   export interface ItemRange {
     start: number;

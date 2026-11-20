@@ -1123,6 +1123,7 @@ pub(crate) mod exports {
         "div",
         "svg",
         "image",
+        "webview",
         // GPUI's own lazy lists. Base's virtual lists live in `gpui-base`;
         // these are GPUI's, and are exported where `div` is.
         "list",
@@ -7125,6 +7126,7 @@ globalThis.__gpui = (() => {
     v_flex: () => element(__v_flex()),
     svg: (path) => element(__svg(String(path))),
     image: (path) => element(__image(String(path))),
+    webview: (url) => element(__webview(String(url))),
     PathBuilder: {
       fill: () => pathBuilder(true, 0),
       stroke: (width) => pathBuilder(false, finitePositive(width, "stroke width")),
@@ -7581,6 +7583,7 @@ impl ShellRuntime {
             )?;
             text_constructor(&globals, "__svg", runtime.clone(), Component::Svg)?;
             text_constructor(&globals, "__image", runtime.clone(), Component::Image)?;
+            text_constructor(&globals, "__webview", runtime.clone(), Component::WebView)?;
             text_constructor(
                 &globals,
                 "__accordion",

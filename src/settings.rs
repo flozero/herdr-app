@@ -409,6 +409,9 @@ pub struct Person {
     /// macOS Option sends Alt shortcuts, or follows the keyboard layout.
     #[serde(skip_serializing_if = "OptionAsAlt::is_auto")]
     pub option_as_alt: OptionAsAlt,
+    /// Shortcuts Herdr keeps while a web view in a mod has the keyboard; it gets every other one.
+    #[serde(skip_serializing_if = "is_default_web_view_keys")]
+    pub webview_keys: Vec<String>,
     /// Light or dark: the system's, or one always.
     #[serde(skip_serializing_if = "Appearance::is_system")]
     pub appearance: Appearance,
@@ -474,6 +477,7 @@ impl Default for Person {
             pane_scrollbars: true,
             minimum_contrast: 1.0,
             option_as_alt: OptionAsAlt::Auto,
+            webview_keys: default_web_view_keys(),
             appearance: Appearance::System,
             theme: None,
             colors: BTreeMap::new(),
@@ -520,7 +524,16 @@ pub struct Settings {
     pub copy_on_select: bool,
     pub minimum_contrast: f32,
     pub option_as_alt: OptionAsAlt,
+    pub webview_keys: Vec<String>,
     pub sounds: Sounds,
+}
+
+fn default_web_view_keys() -> Vec<String> {
+    vec!["cmd-e".into(), "cmd-q".into(), "cmd-shift-w".into()]
+}
+
+fn is_default_web_view_keys(keys: &Vec<String>) -> bool {
+    *keys == default_web_view_keys()
 }
 
 /// Attention sounds: when an agent needs you, and when one finished while you
@@ -567,6 +580,7 @@ impl Default for Settings {
             copy_on_select: true,
             minimum_contrast: 1.0,
             option_as_alt: OptionAsAlt::Auto,
+            webview_keys: default_web_view_keys(),
             sounds: Sounds::default(),
         }
     }
@@ -611,6 +625,7 @@ impl Settings {
             copy_on_select: person.copy_on_select,
             minimum_contrast: person.minimum_contrast,
             option_as_alt: person.option_as_alt,
+            webview_keys: person.webview_keys.clone(),
         }
     }
 }
@@ -760,6 +775,8 @@ pub fn set(s: Settings) -> bool {
         OptionAsAlt::Left => Some(gpui_macos::OptionAsAlt::Left),
         OptionAsAlt::Right => Some(gpui_macos::OptionAsAlt::Right),
     });
+    #[cfg(target_os = "macos")]
+    gpui_macos::set_web_view_keys(s.webview_keys.iter().filter_map(|key| gpui::Keystroke::parse(key).ok()).collect());
     CURRENT.with(|c| {
         // Read the theme even when the settings are the same: its file may
         // have new colors under the same name.

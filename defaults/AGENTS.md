@@ -801,6 +801,7 @@ What's about the user, never a look:
   Finder launches load the login shell's PATH, with the usual install
   folders as a fallback.
 - `option_as_alt`: macOS only, `"auto"` (default), `"on"`, `"off"`, `"left"`, or `"right"`.
+- `webview_keys`: macOS only, the shortcuts Herdr keeps while a mod's web view has the keyboard (default `["cmd-e", "cmd-q", "cmd-shift-w"]`); the web view gets every other one.
   Available in Settings → Keyboard.
   `"auto"` sends Option as Alt on US, US International, ABC and ABC-India;
   other layouts keep native Option text and dead keys. `"on"` enables terminal

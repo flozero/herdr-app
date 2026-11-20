@@ -2595,14 +2595,92 @@ extern "C" fn reset_cursor_rects(this: &Object, _: Sel) {
 }
 
 extern "C" fn handle_key_equivalent(this: &Object, _: Sel, native_event: id) -> BOOL {
+    if unsafe { web_view_takes(native_event) } {
+        unsafe { send_to_web_view(this, native_event) };
+        return YES;
+    }
     handle_key_event(this, native_event, true)
 }
 
+unsafe fn send_to_web_view(this: &Object, native_event: id) {
+    unsafe {
+        let edit = match platform_input_from_native(native_event, None) {
+            Some(PlatformInput::KeyDown(event)) => {
+                let m = event.keystroke.modifiers;
+                let command = m.platform && !m.control && !m.alt && !m.function;
+                match (command, m.shift, event.keystroke.key.as_str()) {
+                    (true, false, "c") => Some(sel!(copy:)),
+                    (true, false, "v") => Some(sel!(paste:)),
+                    (true, false, "x") => Some(sel!(cut:)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let app: id = msg_send![class!(NSApplication), sharedApplication];
+        if let Some(action) = edit {
+            let _: BOOL = msg_send![app, sendAction: action to: nil from: this];
+            return;
+        }
+        let window: id = msg_send![app, keyWindow];
+        let responder: id = msg_send![window, firstResponder];
+        let _: () = msg_send![responder, keyDown: native_event];
+    }
+}
+
+unsafe fn web_view_has_keyboard() -> bool {
+    unsafe {
+        let app: id = msg_send![class!(NSApplication), sharedApplication];
+        let window: id = msg_send![app, keyWindow];
+        if window == nil {
+            return false;
+        }
+        let mut view: id = msg_send![window, firstResponder];
+        if view == nil {
+            return false;
+        }
+        let is_view: BOOL = msg_send![view, isKindOfClass: class!(NSView)];
+        let class: *const Class = msg_send![view, class];
+        if is_view != YES || class == VIEW_CLASS {
+            return false;
+        }
+        loop {
+            view = msg_send![view, superview];
+            if view == nil {
+                return false;
+            }
+            let class: *const Class = msg_send![view, class];
+            if class == VIEW_CLASS {
+                return true;
+            }
+        }
+    }
+}
+
+pub(crate) unsafe fn web_view_takes(native_event: id) -> bool {
+    unsafe {
+        if native_event == nil || !web_view_has_keyboard() {
+            return false;
+        }
+        match platform_input_from_native(native_event, None) {
+            Some(PlatformInput::KeyDown(event)) => !crate::events::web_view_keeps(&event.keystroke),
+            Some(PlatformInput::KeyUp(event)) => !crate::events::web_view_keeps(&event.keystroke),
+            _ => false,
+        }
+    }
+}
+
 extern "C" fn handle_key_down(this: &Object, _: Sel, native_event: id) {
+    if unsafe { web_view_takes(native_event) } {
+        return;
+    }
     handle_key_event(this, native_event, false);
 }
 
 extern "C" fn handle_key_up(this: &Object, _: Sel, native_event: id) {
+    if unsafe { web_view_takes(native_event) } {
+        return;
+    }
     handle_key_event(this, native_event, false);
 }
 
@@ -2814,6 +2892,18 @@ extern "C" fn handle_view_event(this: &Object, _: Sel, native_event: id) {
     let window_height = lock.content_size().height;
     let native_event_type = unsafe { native_event.eventType() };
     match native_event_type {
+        NSEventType::NSLeftMouseDown | NSEventType::NSRightMouseDown | NSEventType::NSOtherMouseDown
+            if unsafe { web_view_has_keyboard() } =>
+        {
+            unsafe {
+                let window: id = msg_send![this, window];
+                let _: BOOL = msg_send![window, makeFirstResponder: this];
+            }
+            if native_event_type == NSEventType::NSLeftMouseDown {
+                lock.last_left_mouse_down_event =
+                    unsafe { Retained::retain(native_event.cast::<Objc2Object>()) };
+            }
+        }
         NSEventType::NSLeftMouseDown => {
             // AppKit owns `native_event` for the callback; retain it so the drag session can still
             // be started later, once the pointer leaves the window.
