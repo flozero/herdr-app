@@ -122,7 +122,7 @@ mod linux {
     }
 
     /// The window web views go in, or `None` when the app isn't on X11 (Wayland has no way to
-    /// embed a foreign window: start Herdr without `WAYLAND_DISPLAY` to run it on XWayland).
+    /// embed a foreign window: start Herdr with `HERDR_APP_X11=1` to run it on XWayland).
     pub(super) fn parent(window: &Window) -> Option<Parent> {
         match HasWindowHandle::window_handle(window).ok()?.as_raw() {
             RawWindowHandle::Xcb(handle) => Some(Parent(c_ulong::from(handle.window.get()))),
@@ -132,7 +132,7 @@ mod linux {
                 WARNED.call_once(|| {
                     tracing::warn!(
                         "webview: web views need an X11 window and this one isn't. \
-                         Start Herdr with WAYLAND_DISPLAY unset to run it on XWayland; this web view stays empty"
+                         Start Herdr with HERDR_APP_X11=1 to run it on XWayland; this web view stays empty"
                     );
                 });
                 None

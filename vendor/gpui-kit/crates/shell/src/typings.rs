@@ -2122,8 +2122,8 @@ const ELEMENTS: &str = r#"
    * It is drawn above the window, so popups, menus and toasts can't cover it.
    * It is destroyed when it is no longer shown; with `{ keep: true }` and an
    * `id`, it is hidden instead and comes back with its page as it was.
-   * Shown on macOS, and on Linux when the app runs on X11 (start it without
-   * `WAYLAND_DISPLAY` to use XWayland); elsewhere it stays empty. On Linux the
+   * Shown on macOS, and on Linux when the app's window is X11 (Herdr starts
+   * on XWayland with `HERDR_APP_X11=1`); elsewhere it stays empty. On Linux the
    * web view takes the keyboard while the pointer is over it, so the app's own
    * shortcuts wait until the pointer leaves.
    */
