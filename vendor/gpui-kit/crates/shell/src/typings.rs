@@ -3285,6 +3285,22 @@ const BASE: &str = r#"  /** A row. */
   /** The frame around retained multi-line text state. */
   export const Textarea: { new: (state: TextareaState) => NativeElement };
 
+  export interface LspPosition { line: number; character: number }
+  export interface LspRange { start: LspPosition; end: LspPosition }
+  export interface EditorLspRequest { position: LspPosition; offset: number }
+  export interface EditorCompletionRequest extends EditorLspRequest {
+    context: { triggerKind: 1 | 2 | 3; triggerCharacter?: string };
+  }
+  export interface EditorShowDocument { uri: string; external?: boolean; takeFocus?: boolean; selection?: LspRange }
+  export interface EditorLspOptions {
+    uri?: string;
+    trigger_characters?: string[];
+    completion?: (request: EditorCompletionRequest, cx: Context) => unknown;
+    hover?: (request: EditorLspRequest, cx: Context) => unknown;
+    definition?: (request: EditorLspRequest, cx: Context) => unknown;
+    show_document?: (params: EditorShowDocument, cx: Context) => void;
+  }
+
   // HERDR: built-in source editing and read-only code viewing.
   export interface EditorState {
     value(): string;
@@ -3298,6 +3314,10 @@ const BASE: &str = r#"  /** A row. */
     on(event: "change" | "submit" | "focus" | "blur" | "paste_other", handler: (event: InputEvent, cx: Context) => void): boolean;
     /** Changes the indent once the file's style is known. `hard_tabs` defaults to false. */
     set_tab_size(tab_size: number, hard_tabs?: boolean): void;
+    lsp(options: EditorLspOptions): void;
+    set_diagnostics(diagnostics: Array<{ range: LspRange; severity?: 1 | 2 | 3 | 4; message: string; source?: string; code?: string | number }>): void;
+    apply_edits(edits: Array<{ range: LspRange; newText: string }>): void;
+    set_highlights(name: string, highlights: Array<{ range: LspRange; color?: string; style?: "fill" | "frame" }>): void;
     /** Moves the keyboard onto the editor. */
     focus(): void;
     /**

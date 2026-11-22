@@ -629,6 +629,119 @@ pub fn install(ctx: &Ctx<'_>, module: &Object<'_>, runtime: Weak<ShellRuntime>) 
         ),
     )?;
 
+    let lsp_editor = runtime.clone();
+    globals.set(
+        "__editor_lsp",
+        Func::from(
+            move |ctx: Ctx<'_>,
+                  handle: EntityHandle,
+                  json: String,
+                  dispatch: Handler|
+                  -> JsResult<()> {
+                refuse_mutation_in_render(&ctx, "lsp(...)")?;
+                let options: super::editor_lsp::LspOptions = serde_json::from_str(&json)
+                    .map_err(|error| Exception::throw_type(&ctx, &format!("lsp(...): {error}")))?;
+                let state = live_editor(&ctx, &lsp_editor, handle)?;
+                let dispatch = std::rc::Rc::new(dispatch.0);
+                let weak_dispatch = std::rc::Rc::downgrade(&dispatch);
+                let kept = alive(&ctx, &lsp_editor)?
+                    .entities()
+                    .keep_editor_language(handle, gpui::Subscription::new(move || drop(dispatch)));
+                if !kept {
+                    return Err(Exception::throw_type(
+                        &ctx,
+                        "this editor state has been released",
+                    ));
+                }
+                let runtime = lsp_editor.clone();
+                scope::with_current_app(|cx| {
+                    super::editor_lsp::ScriptLsp::install(
+                        &state,
+                        options,
+                        runtime,
+                        weak_dispatch,
+                        cx,
+                    )
+                })
+                .ok_or_else(|| needs_call(&ctx, "lsp(...)"))
+            },
+        ),
+    )?;
+
+    let diagnose_editor = runtime.clone();
+    globals.set(
+        "__editor_set_diagnostics",
+        Func::from(
+            move |ctx: Ctx<'_>, handle: EntityHandle, json: String| -> JsResult<()> {
+                refuse_mutation_in_render(&ctx, "set_diagnostics(...)")?;
+                let diagnostics: Vec<lsp_types::Diagnostic> =
+                    serde_json::from_str(&json).map_err(|error| {
+                        Exception::throw_type(&ctx, &format!("set_diagnostics(...): {error}"))
+                    })?;
+                let state = live_editor(&ctx, &diagnose_editor, handle)?;
+                scope::with_current_app(|cx| {
+                    super::editor_lsp::set_diagnostics(&state, diagnostics, cx)
+                })
+                .ok_or_else(|| needs_call(&ctx, "set_diagnostics(...)"))
+            },
+        ),
+    )?;
+
+    let edit_editor = runtime.clone();
+    globals.set(
+        "__editor_apply_edits",
+        Func::from(
+            move |ctx: Ctx<'_>, handle: EntityHandle, json: String| -> JsResult<()> {
+                refuse_mutation_in_render(&ctx, "apply_edits(...)")?;
+                let edits: Vec<lsp_types::TextEdit> =
+                    serde_json::from_str(&json).map_err(|error| {
+                        Exception::throw_type(&ctx, &format!("apply_edits(...): {error}"))
+                    })?;
+                let state = live_editor(&ctx, &edit_editor, handle)?;
+                scope::with_current(|window, cx| {
+                    super::editor_lsp::apply_edits(&state, edits, window, cx)
+                })
+                .ok_or_else(|| needs_call(&ctx, "apply_edits(...)"))
+            },
+        ),
+    )?;
+
+    let highlight_editor = runtime.clone();
+    globals.set(
+        "__editor_set_highlights",
+        Func::from(
+            move |ctx: Ctx<'_>, handle: EntityHandle, name: String, json: String| -> JsResult<()> {
+                refuse_mutation_in_render(&ctx, "set_highlights(...)")?;
+                let specs: Vec<super::editor_lsp::HighlightSpec> = serde_json::from_str(&json)
+                    .map_err(|error| {
+                        Exception::throw_type(&ctx, &format!("set_highlights(...): {error}"))
+                    })?;
+                let state = live_editor(&ctx, &highlight_editor, handle)?;
+                let store = alive(&ctx, &highlight_editor)?;
+                let existing = store.entities().editor_highlight(handle, &name);
+                scope::with_current_app(|cx| -> anyhow::Result<()> {
+                    let decorations = super::editor_lsp::highlights(&state, specs, cx)?;
+                    match existing {
+                        Some(collection) => collection.set(decorations, cx),
+                        None => {
+                            let collection = state.update(cx, |state, cx| {
+                                state.create_range_decorations_collection(decorations, cx)
+                            });
+                            store
+                                .entities()
+                                .keep_editor_highlight(handle, name, collection);
+                        }
+                    }
+                    Ok(())
+                })
+                .ok_or_else(|| needs_call(&ctx, "set_highlights(...)"))?
+                .map_err(|error| {
+                    Exception::throw_type(&ctx, &format!("set_highlights(...): {error}"))
+                })
+            },
+        ),
+    )?;
+
     let discard_editor = runtime.clone();
     globals.set(
         "__editor_release",
