@@ -29,6 +29,7 @@ pub(crate) struct EditorOverlay {
     shown: RefCell<Option<(u64, String)>>,
     selected: Cell<usize>,
     top: Cell<usize>,
+    selection_hover: Cell<bool>,
 }
 
 impl EditorOverlay {
@@ -73,6 +74,10 @@ impl EditorOverlay {
             return true;
         }
         false
+    }
+
+    pub(crate) fn set_selection_hover(&self, on: bool) {
+        self.selection_hover.set(on);
     }
 
     fn select(&self, index: usize) {
@@ -188,7 +193,7 @@ pub(crate) fn overlays(
     if let Some(menu) = completion_menu(handle, state, overlay, cx) {
         elements.push(menu);
     }
-    if let Some(popover) = hover_popover(handle, state, cx) {
+    if let Some(popover) = hover_popover(handle, state, overlay, cx) {
         elements.push(popover);
     }
     elements
@@ -290,6 +295,7 @@ fn completion_menu(
 fn hover_popover(
     handle: EntityHandle,
     state: &Entity<EditorState>,
+    overlay: &EditorOverlay,
     cx: &App,
 ) -> Option<AnyElement> {
     let editor = state.read(cx);
@@ -297,7 +303,16 @@ fn hover_popover(
         return None;
     }
     let hover = editor.hover_popover().cloned();
-    let diagnostic = editor.diagnostic_popover();
+    let diagnostic = if overlay.selection_hover.get() {
+        hover.as_ref().and_then(|hover| {
+            editor
+                .diagnostics()
+                .and_then(|set| set.range(hover.symbol_range.clone()).next().cloned())
+                .map(Rc::new)
+        })
+    } else {
+        editor.diagnostic_popover()
+    };
     let range: Range<usize> = hover
         .as_ref()
         .map(|hover| hover.symbol_range.clone())
@@ -349,12 +364,17 @@ fn hover_popover(
                     }),
             )
         })
-        .when_some(hover, |popover, hover| {
-            popover.child(TextView::markdown(
-                ("gpui-shell-editor-hover-text", handle),
-                markdown_of(&hover.hover),
-            ))
-        });
+        .when_some(
+            hover
+                .map(|hover| markdown_of(&hover.hover))
+                .filter(|text| !text.trim().is_empty()),
+            |popover, text| {
+                popover.child(TextView::markdown(
+                    ("gpui-shell-editor-hover-text", handle),
+                    text,
+                ))
+            },
+        );
     Some(
         deferred(
             anchored()

@@ -6375,6 +6375,55 @@ export default class Code extends View {
 }
 
 #[gpui::test]
+fn a_selection_hover_follows_the_selected_symbol_not_the_pointer(cx: &mut TestAppContext) {
+    cx.update(|cx| crate::init(cx));
+    let runtime = ShellRuntime::new_isolated().expect("runtime");
+    cx.update(|cx| runtime.set_global(cx));
+    let source = r#"
+import { View } from "gpui-kit";
+import { Editor, EditorState } from "gpui-base";
+export default class Code extends View {
+  init() {
+    this.code = EditorState.new({ language: "rust", value: "\\n\\n\\n\\nfn main() { greet(); }" });
+    this.asked = [];
+    this.code.lsp({
+      hover_trigger: "selection",
+      hover: (request) => {
+        this.asked.push(request.offset);
+        return { contents: { kind: "markdown", value: "```rust\\nfn greet()\\n```" } };
+      },
+    });
+  }
+  render(cx) { return Editor.new(this.code).h(240); }
+}
+"#;
+    let view_type = runtime.load_source("selection-hover", source).expect("load");
+    let runtime_for_view = runtime.clone();
+    let (_root, mut context) = cx.add_window_view(move |window, cx| {
+        let object = runtime_for_view
+            .instantiate(&view_type, window, cx)
+            .expect("instantiate");
+        let view = cx.new(|_| ScriptView::new(runtime_for_view, object));
+        crate::root::ShellRoot::new(view.into(), window, cx)
+    });
+    context.update(|window, cx| window.draw(cx).clear(cx));
+    let editor = runtime.entities().first_editor().expect("editor");
+    context.update(|_, cx| assert!(editor.read(cx).lsp().hover_provider.is_none()));
+    let select = |range: std::ops::Range<usize>, context: &mut VisualTestContext| {
+        context.update(|_, cx| editor.update(cx, |state, cx| state.set_selected_range(range, cx)));
+        context.run_until_parked();
+        context.update(|window, cx| window.draw(cx).clear(cx));
+    };
+    select(16..21, &mut context);
+    assert!(context.debug_bounds("editor-hover").is_some(), "selecting greet shows its hover");
+    context.update(|_, cx| {
+        assert_eq!(editor.read(cx).hover_popover().map(|hover| hover.symbol_range.clone()), Some(16..21));
+    });
+    select(4..4, &mut context);
+    assert!(context.debug_bounds("editor-hover").is_none(), "a caret hides it");
+}
+
+#[gpui::test]
 fn a_script_editor_draws_hover_and_diagnostic_popovers_beside_the_symbol(cx: &mut TestAppContext) {
     cx.update(|cx| crate::init(cx));
     let runtime = ShellRuntime::new_isolated().expect("runtime");

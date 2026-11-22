@@ -1,7 +1,11 @@
-use std::rc::{Rc, Weak};
+use std::{
+    cell::RefCell,
+    ops::Range,
+    rc::{Rc, Weak},
+};
 
 use anyhow::{Result, anyhow};
-use gpui::{App, Entity, Task, WeakEntity, Window};
+use gpui::{App, Entity, Subscription, Task, WeakEntity, Window};
 use gpui_base::input::{
     CompletionProvider, DefinitionProvider, EditorState, HoverProvider, Rope, RopeExt,
 };
@@ -26,6 +30,91 @@ pub(super) struct LspOptions {
     hover: bool,
     definition: bool,
     show_document: bool,
+    hover_trigger: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum HoverTrigger {
+    Pointer,
+    Selection,
+}
+
+impl LspOptions {
+    pub(super) fn hover_trigger(&self) -> Result<HoverTrigger> {
+        match self.hover_trigger.as_deref() {
+            None | Some("pointer") => Ok(HoverTrigger::Pointer),
+            Some("selection") => Ok(HoverTrigger::Selection),
+            Some(other) => Err(anyhow!(
+                "unknown hover_trigger `{other}`; expected \"pointer\" or \"selection\""
+            )),
+        }
+    }
+}
+
+const SELECTED_SYMBOL_LIMIT: usize = 200;
+
+fn empty_hover() -> Hover {
+    Hover {
+        contents: lsp_types::HoverContents::Markup(lsp_types::MarkupContent {
+            kind: lsp_types::MarkupKind::Markdown,
+            value: String::new(),
+        }),
+        range: None,
+    }
+}
+
+fn hover_on_selection(
+    state: &Entity<EditorState>,
+    lsp: Rc<ScriptLsp>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Subscription {
+    let last: RefCell<Option<Range<usize>>> = RefCell::new(None);
+    let pending = RefCell::new(Task::ready(()));
+    window.observe(state, cx, move |state, window, cx| {
+        let (range, text, shown) = {
+            let editor = state.read(cx);
+            (
+                editor.selected_range(),
+                editor.text().clone(),
+                editor.hover_popover().is_some(),
+            )
+        };
+        if last.borrow().as_ref() == Some(&range) {
+            return;
+        }
+        *last.borrow_mut() = Some(range.clone());
+        *pending.borrow_mut() = Task::ready(());
+        if shown {
+            state.update(cx, |state, cx| state.clear_hover_state(cx));
+        }
+        let symbol = !range.is_empty()
+            && range.len() <= SELECTED_SYMBOL_LIMIT
+            && text.offset_to_position(range.start).line == text.offset_to_position(range.end).line;
+        if !symbol {
+            return;
+        }
+        let flagged = state
+            .read(cx)
+            .diagnostics()
+            .is_some_and(|set| set.range(range.clone()).next().is_some());
+        let answer = lsp.hover(&text, range.start, window, cx);
+        let target = state.downgrade();
+        *pending.borrow_mut() = cx.spawn(async move |cx| {
+            let hover = answer
+                .await
+                .ok()
+                .flatten()
+                .or_else(|| flagged.then(empty_hover));
+            if let Some(hover) = hover {
+                let _ = target.update(cx, |state, cx| {
+                    if state.selected_range() == range {
+                        state.present_hover(range, hover, cx);
+                    }
+                });
+            }
+        });
+    })
 }
 
 #[derive(serde::Deserialize)]
@@ -86,8 +175,10 @@ impl ScriptLsp {
         options: LspOptions,
         runtime: Weak<ShellRuntime>,
         dispatch: Weak<Persistent<Function<'static>>>,
+        trigger: HoverTrigger,
+        window: &mut Window,
         cx: &mut App,
-    ) {
+    ) -> Option<Subscription> {
         let lsp = Rc::new_cyclic(|this| Self {
             this: this.clone(),
             runtime,
@@ -116,13 +207,16 @@ impl ScriptLsp {
             providers.completion_provider = options
                 .completion
                 .then(|| lsp.clone() as Rc<dyn CompletionProvider>);
-            providers.hover_provider = options.hover.then(|| lsp.clone() as Rc<dyn HoverProvider>);
+            providers.hover_provider = (options.hover && trigger == HoverTrigger::Pointer)
+                .then(|| lsp.clone() as Rc<dyn HoverProvider>);
             providers.definition_provider = options
                 .definition
                 .then(|| lsp.clone() as Rc<dyn DefinitionProvider>);
             providers.show_document = show_document;
             cx.notify();
         });
+        (options.hover && trigger == HoverTrigger::Selection)
+            .then(|| hover_on_selection(state, lsp, window, cx))
     }
 
     fn rc(&self) -> Option<Rc<Self>> {

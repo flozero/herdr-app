@@ -641,29 +641,40 @@ pub fn install(ctx: &Ctx<'_>, module: &Object<'_>, runtime: Weak<ShellRuntime>) 
                 refuse_mutation_in_render(&ctx, "lsp(...)")?;
                 let options: super::editor_lsp::LspOptions = serde_json::from_str(&json)
                     .map_err(|error| Exception::throw_type(&ctx, &format!("lsp(...): {error}")))?;
+                let trigger = options
+                    .hover_trigger()
+                    .map_err(|error| Exception::throw_type(&ctx, &format!("lsp(...): {error}")))?;
                 let state = live_editor(&ctx, &lsp_editor, handle)?;
-                let dispatch = std::rc::Rc::new(dispatch.0);
-                let weak_dispatch = std::rc::Rc::downgrade(&dispatch);
-                let kept = alive(&ctx, &lsp_editor)?
-                    .entities()
-                    .keep_editor_language(handle, gpui::Subscription::new(move || drop(dispatch)));
-                if !kept {
+                let store = alive(&ctx, &lsp_editor)?;
+                let Some(overlay) = store.entities().editor_overlay(handle) else {
                     return Err(Exception::throw_type(
                         &ctx,
                         "this editor state has been released",
                     ));
-                }
+                };
+                overlay.set_selection_hover(trigger == super::editor_lsp::HoverTrigger::Selection);
+                let dispatch = std::rc::Rc::new(dispatch.0);
+                let weak_dispatch = std::rc::Rc::downgrade(&dispatch);
                 let runtime = lsp_editor.clone();
-                scope::with_current_app(|cx| {
+                let observer = scope::with_current(|window, cx| {
                     super::editor_lsp::ScriptLsp::install(
                         &state,
                         options,
                         runtime,
                         weak_dispatch,
+                        trigger,
+                        window,
                         cx,
                     )
                 })
-                .ok_or_else(|| needs_call(&ctx, "lsp(...)"))
+                .ok_or_else(|| needs_call(&ctx, "lsp(...)"))?;
+                let keep = gpui::Subscription::new(move || drop(dispatch));
+                let keep = match observer {
+                    Some(observer) => gpui::Subscription::join(keep, observer),
+                    None => keep,
+                };
+                store.entities().keep_editor_language(handle, keep);
+                Ok(())
             },
         ),
     )?;
