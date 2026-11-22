@@ -3299,6 +3299,7 @@ const BASE: &str = r#"  /** A row. */
     hover?: (request: EditorLspRequest, cx: Context) => unknown;
     definition?: (request: EditorLspRequest, cx: Context) => unknown;
     show_document?: (params: EditorShowDocument, cx: Context) => void;
+    hover_trigger?: "pointer" | "selection";
   }
 
   // HERDR: built-in source editing and read-only code viewing.

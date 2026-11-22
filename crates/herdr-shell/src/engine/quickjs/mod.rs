@@ -7363,6 +7363,7 @@ globalThis.__gpui = (() => {
               hover: provided("hover"),
               definition: provided("definition"),
               show_document: provided("show_document"),
+              hover_trigger: options.hover_trigger === undefined || options.hover_trigger === null ? null : String(options.hover_trigger),
             };
             __editor_lsp(handle, JSON.stringify(settings), (kind, request, settle, cx) => {
               if (settle === null) {
