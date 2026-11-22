@@ -2479,6 +2479,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             self.resolve_mouse_position(event.position);
 
         if M::on_click(self, event, offset, window, cx) {
+            self.selecting = false;
             return;
         }
 
