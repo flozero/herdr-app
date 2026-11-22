@@ -16,6 +16,8 @@ pub enum RangeDecorationStyle {
     /// Draw a continuous one-pixel frame around the visual range.
     #[default]
     Frame,
+    /// Mark the range's lines with a bar in the line-number gutter.
+    Gutter,
 }
 
 /// A geometric decoration over a UTF-8 byte range.

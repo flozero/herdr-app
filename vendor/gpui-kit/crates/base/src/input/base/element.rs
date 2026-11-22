@@ -835,6 +835,7 @@ impl<M: InputModeKind> TextElement<M> {
                         fills.push((path, color));
                     }
                 }
+                RangeDecorationStyle::Gutter => {}
                 RangeDecorationStyle::Frame => {
                     let color = decoration.color().unwrap_or(state.editor_style.foreground);
                     let Some(corners) = Self::layout_range_corners(decoration.range(), last_layout)
@@ -866,6 +867,29 @@ impl<M: InputModeKind> TextElement<M> {
             }
         }
         (fills, frames)
+    }
+
+    fn layout_gutter_marks(
+        &self,
+        last_layout: &LastLayout,
+        bounds: &Bounds<Pixels>,
+        cx: &App,
+    ) -> Vec<(Pixels, Pixels, Hsla)> {
+        let state = self.state.read(cx);
+        let visible = last_layout.visible_range_offset.clone();
+        state
+            .extras
+            .range_decorations(&[visible])
+            .into_iter()
+            .filter(|decoration| decoration.style() == RangeDecorationStyle::Gutter)
+            .filter_map(|decoration| {
+                let corners = Self::layout_range_corners(decoration.range(), last_layout)?;
+                let top = corners.first()?.top_left.y;
+                let bottom = corners.last()?.bottom_left.y;
+                let color = decoration.color().unwrap_or(state.editor_style.foreground);
+                Some((bounds.origin.y + top, bounds.origin.y + bottom, color))
+            })
+            .collect()
     }
 
     fn layout_search_matches(
@@ -2298,6 +2322,7 @@ pub(super) struct PrepaintState {
     document_color_paths: Vec<(Path<Pixels>, Hsla)>,
     range_decoration_fills: Vec<(Path<Pixels>, Hsla)>,
     range_decoration_frames: Vec<(Path<Pixels>, Hsla)>,
+    gutter_marks: Vec<(Pixels, Pixels, Hsla)>,
     hover_definition_hitbox: Option<Hitbox>,
     indent_guides_path: Option<Path<Pixels>>,
     /// The whole input, for deciding whether a long press started in it.
@@ -2895,6 +2920,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
         let hover_highlight_path = self.layout_hover_highlight(&last_layout, &mut bounds, cx);
         let document_color_paths =
             self.layout_document_colors(&document_colors, &last_layout, &bounds, cx);
+        let gutter_marks = self.layout_gutter_marks(&last_layout, &bounds, cx);
         let (range_decoration_fills, range_decoration_frames) = self.layout_range_decorations(
             &last_layout,
             &bounds,
@@ -2992,6 +3018,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
             document_color_paths,
             range_decoration_fills,
             range_decoration_frames,
+            gutter_marks,
             indent_guides_path,
             fold_icon_layout,
             ghost_first_line,
@@ -3256,6 +3283,15 @@ impl<M: InputModeKind> Element for TextElement<M> {
                 editor_paddings,
             );
             window.paint_quad(fill(gutter_bounds, gutter_bg));
+            for (top, bottom, color) in &prepaint.gutter_marks {
+                window.paint_quad(fill(
+                    Bounds::new(
+                        point(input_bounds.origin.x - px(6.), *top),
+                        size(px(3.), *bottom - *top),
+                    ),
+                    *color,
+                ));
+            }
 
             // Each item is the normal lines.
             for (lines, &buffer_line) in line_numbers

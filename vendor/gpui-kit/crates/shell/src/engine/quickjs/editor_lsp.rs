@@ -142,9 +142,10 @@ pub(super) fn highlights(
             let style = match spec.style.as_deref() {
                 None | Some("fill") => RangeDecorationStyle::Fill,
                 Some("frame") => RangeDecorationStyle::Frame,
+                Some("gutter") => RangeDecorationStyle::Gutter,
                 Some(other) => {
                     return Err(anyhow!(
-                        "unknown style `{other}`; expected \"fill\" or \"frame\""
+                        "unknown style `{other}`; expected \"fill\", \"frame\" or \"gutter\""
                     ));
                 }
             };
