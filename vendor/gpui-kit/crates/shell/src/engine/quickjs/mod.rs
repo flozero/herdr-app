@@ -7386,6 +7386,8 @@ globalThis.__gpui = (() => {
           apply_edits: (edits) => __editor_apply_edits(handle, JSON.stringify(edits ?? [])),
           set_highlights: (name, highlights) =>
             __editor_set_highlights(handle, String(name), JSON.stringify(highlights ?? [])),
+          set_locked_lines: (lines) =>
+            __editor_set_locked_lines(handle, JSON.stringify(Array.from(lines ?? [], (line) => Math.max(0, Math.floor(Number(line) || 0))))),
           set_line_labels: (labels) =>
             __editor_set_line_labels(handle, JSON.stringify(labels == null ? null : Array.from(labels, (label) => String(label ?? "")))),
           focus: () => __editor_focus(handle),

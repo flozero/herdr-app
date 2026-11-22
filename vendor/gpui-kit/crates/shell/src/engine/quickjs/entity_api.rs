@@ -776,6 +776,24 @@ pub fn install(ctx: &Ctx<'_>, module: &Object<'_>, runtime: Weak<ShellRuntime>) 
         ),
     )?;
 
+    let locks_editor = runtime.clone();
+    globals.set(
+        "__editor_set_locked_lines",
+        Func::from(
+            move |ctx: Ctx<'_>, handle: EntityHandle, json: String| -> JsResult<()> {
+                refuse_mutation_in_render(&ctx, "set_locked_lines(...)")?;
+                let lines: Vec<usize> = serde_json::from_str(&json).map_err(|error| {
+                    Exception::throw_type(&ctx, &format!("set_locked_lines(...): {error}"))
+                })?;
+                let state = live_editor(&ctx, &locks_editor, handle)?;
+                scope::with_current_app(|cx| {
+                    state.update(cx, |state, cx| state.set_locked_lines(lines, cx))
+                })
+                .ok_or_else(|| needs_call(&ctx, "set_locked_lines(...)"))
+            },
+        ),
+    )?;
+
     let discard_editor = runtime.clone();
     globals.set(
         "__editor_release",
