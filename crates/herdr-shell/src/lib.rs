@@ -58,6 +58,7 @@ pub(crate) mod assets;
 pub(crate) mod capability;
 mod component;
 mod component_registry;
+mod editor_overlay;
 mod input_tokens;
 // HERDR: syntax highlighting shipped with script editors.
 mod syntax;

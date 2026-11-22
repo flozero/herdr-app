@@ -3717,6 +3717,7 @@ dependencies = [
  "image",
  "instant",
  "libc",
+ "lsp-types",
  "quickjs-jit",
  "quickjs-jit-runtime",
  "quickjs-jit-stdlib",
