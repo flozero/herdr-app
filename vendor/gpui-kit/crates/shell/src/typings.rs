@@ -3319,6 +3319,8 @@ const BASE: &str = r#"  /** A row. */
     set_diagnostics(diagnostics: Array<{ range: LspRange; severity?: 1 | 2 | 3 | 4; message: string; source?: string; code?: string | number }>): void;
     apply_edits(edits: Array<{ range: LspRange; newText: string }>): void;
     set_highlights(name: string, highlights: Array<{ range: LspRange; color?: string; style?: "fill" | "frame" | "gutter" }>): void;
+    /** Gutter labels in place of the line numbers, one per line ("" for none); null brings the numbers back. */
+    set_line_labels(labels: Array<string | null> | null): void;
     /** Moves the keyboard onto the editor. */
     focus(): void;
     /**
