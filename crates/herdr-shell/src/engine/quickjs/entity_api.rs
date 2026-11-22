@@ -753,6 +753,29 @@ pub fn install(ctx: &Ctx<'_>, module: &Object<'_>, runtime: Weak<ShellRuntime>) 
         ),
     )?;
 
+    let labels_editor = runtime.clone();
+    globals.set(
+        "__editor_set_line_labels",
+        Func::from(
+            move |ctx: Ctx<'_>, handle: EntityHandle, json: String| -> JsResult<()> {
+                refuse_mutation_in_render(&ctx, "set_line_labels(...)")?;
+                let labels: Option<Vec<String>> = serde_json::from_str(&json).map_err(|error| {
+                    Exception::throw_type(&ctx, &format!("set_line_labels(...): {error}"))
+                })?;
+                let state = live_editor(&ctx, &labels_editor, handle)?;
+                scope::with_current_app(|cx| {
+                    state.update(cx, |state, cx| {
+                        state.set_line_number_labels(
+                            labels.map(|labels| labels.into_iter().map(gpui::SharedString::from).collect()),
+                            cx,
+                        )
+                    })
+                })
+                .ok_or_else(|| needs_call(&ctx, "set_line_labels(...)"))
+            },
+        ),
+    )?;
+
     let discard_editor = runtime.clone();
     globals.set(
         "__editor_release",

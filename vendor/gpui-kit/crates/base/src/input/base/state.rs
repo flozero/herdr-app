@@ -435,6 +435,7 @@ pub struct InputBaseState<M: InputModeKind> {
     /// [`InputBaseState::search_activation_revision`].
     pub(super) search_activation_revision: u64,
     pub(super) searchable: bool,
+    pub(super) line_number_labels: Option<std::rc::Rc<Vec<SharedString>>>,
     pub(super) replaceable: bool,
     pub(super) soft_wrap: bool,
     pub(super) wrapping_indent: WrappingIndent,
@@ -810,6 +811,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             search_session: super::SearchSession::default(),
             search_activation_revision: 0,
             searchable: false,
+            line_number_labels: None,
             replaceable: true,
             soft_wrap: true,
             wrapping_indent: WrappingIndent::default(),
@@ -11081,6 +11083,12 @@ impl<M: crate::input::MultiLineMode> InputBaseState<M> {
     /// See [`InputBaseState::searchable`].
     pub fn set_searchable(&mut self, searchable: bool, cx: &mut Context<Self>) {
         self.searchable = searchable;
+        cx.notify();
+    }
+
+    /// Show these labels in the gutter instead of the line numbers, one per buffer line.
+    pub fn set_line_number_labels(&mut self, labels: Option<Vec<SharedString>>, cx: &mut Context<Self>) {
+        self.line_number_labels = labels.map(std::rc::Rc::new);
         cx.notify();
     }
 

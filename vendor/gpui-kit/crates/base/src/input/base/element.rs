@@ -2955,12 +2955,20 @@ impl<M: InputModeKind> Element for TextElement<M> {
                 .iter()
                 .zip(last_layout.visible_buffer_lines.iter())
             {
-                let line_no: SharedString = format!(
-                    "{:>width$}",
-                    displayed_line_number(buffer_line + 1),
-                    width = line_number_len
-                )
-                .into();
+                let line_no: SharedString = match state.line_number_labels.as_ref() {
+                    Some(labels) => format!(
+                        "{:>width$}",
+                        labels.get(buffer_line).map(|label| label.as_ref()).unwrap_or(""),
+                        width = line_number_len
+                    )
+                    .into(),
+                    None => format!(
+                        "{:>width$}",
+                        displayed_line_number(buffer_line + 1),
+                        width = line_number_len
+                    )
+                    .into(),
+                };
 
                 let runs = if current_row == Some(buffer_line) {
                     &current_line_runs
