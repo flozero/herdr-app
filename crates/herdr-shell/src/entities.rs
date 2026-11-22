@@ -484,7 +484,8 @@ impl EntityStore {
                 .line_number(options.line_numbers)
                 .folding(options.folding)
                 .soft_wrap(options.soft_wrap)
-                .tab_size(tab);
+                .tab_size(tab)
+                .searchable(false);
             state.set_readonly(options.readonly, cx);
             state.set_editor_style(style);
             state.set_highlighter_factory(
