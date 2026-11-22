@@ -3286,7 +3286,11 @@ impl<M: InputModeKind> Element for TextElement<M> {
             for (top, bottom, color) in &prepaint.gutter_marks {
                 window.paint_quad(fill(
                     Bounds::new(
-                        point(input_bounds.origin.x - px(6.), *top),
+                        point(
+                            input_bounds.origin.x + prepaint.last_layout.line_number_width
+                                - px(4.),
+                            *top,
+                        ),
                         size(px(3.), *bottom - *top),
                     ),
                     *color,
