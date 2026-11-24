@@ -7386,6 +7386,7 @@ globalThis.__gpui = (() => {
           apply_edits: (edits) => __editor_apply_edits(handle, JSON.stringify(edits ?? [])),
           set_highlights: (name, highlights) =>
             __editor_set_highlights(handle, String(name), JSON.stringify(highlights ?? [])),
+          first_visible_line: () => __editor_first_visible_line(handle),
           set_locked_lines: (lines) =>
             __editor_set_locked_lines(handle, JSON.stringify(Array.from(lines ?? [], (line) => Math.max(0, Math.floor(Number(line) || 0))))),
           set_line_labels: (labels) =>
@@ -7566,6 +7567,7 @@ impl ShellRuntime {
                 "highlight_range",
                 "scrollable",
                 "raw_html",
+                "scroll_to_line",
                 "selected",
                 "checked",
                 "accessibility_label",
@@ -8611,6 +8613,7 @@ impl ShellRuntime {
             | "highlight_range"
             | "scrollable"
             | "raw_html"
+            | "scroll_to_line"
             | "selected"
             | "checked"
             | "accessibility_label"
@@ -8671,6 +8674,7 @@ impl ShellRuntime {
                     "highlight_range" => "highlight_range",
                     "scrollable" => "scrollable",
                     "raw_html" => "raw_html",
+                    "scroll_to_line" => "scroll_to_line",
                     "selected" => "selected",
                     "checked" => "checked",
                     "tooltip" => "tooltip",

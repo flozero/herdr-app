@@ -11115,6 +11115,12 @@ impl<M: crate::input::MultiLineMode> InputBaseState<M> {
         cx.notify();
     }
 
+    /// The first buffer line (0-based) the last frame drew at the top, or `None` before the first
+    /// frame. A folded region counts as the line that stays visible.
+    pub fn first_visible_line(&self) -> Option<usize> {
+        self.last_layout.as_ref().and_then(|layout| layout.visible_buffer_lines.first().copied())
+    }
+
     /// Show these labels in the gutter instead of the line numbers, one per buffer line.
     pub fn set_line_number_labels(&mut self, labels: Option<Vec<SharedString>>, cx: &mut Context<Self>) {
         self.line_number_labels = labels.map(std::rc::Rc::new);
