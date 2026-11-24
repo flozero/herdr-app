@@ -3361,7 +3361,8 @@ const BASE: &str = r#"  /** A row. */
       /** Tab inserts a `\t` instead of spaces. Defaults to false. */
       hard_tabs?: boolean;
       /** Semantic colors: keyword, string, comment, function, type, number,
-       * constant, variable, operator, punctuation, boolean, string.escape.
+       * constant, variable, operator, punctuation, boolean, string.escape,
+       * tag, attribute, property, variable.language.
        * Markdown ("markdown" or "md") adds heading, strong, emphasis, code,
        * quote, list and link. Unset heading, strong and list use keyword's color,
        * code uses string, quote uses comment, and link URLs use function.
