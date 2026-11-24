@@ -831,6 +831,9 @@ What's about the user, never a look:
   Option input on every layout. `"left"` / `"right"` makes only that Option
   key act as Alt; the other types characters. Changes apply immediately, including layout
   switches. Linux and Windows are unchanged.
+- `webview_keys`: macOS only, the shortcuts Herdr keeps while a mod's web view
+  has the keyboard (default `["cmd-q", "cmd-shift-w", "ctrl-tab", "ctrl-shift-tab"]`);
+  the web view gets every other one. Add a mod's own shortcut here to reach it from the web view.
 - `minimum_contrast`: terminal text contrast ratio, `1` (default) leaves
   program colors unchanged. Set it to `1.6` to enable the previous readability
   adjustment, or another number from `1` to `21`. Text below that ratio is
