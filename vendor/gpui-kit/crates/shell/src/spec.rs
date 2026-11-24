@@ -228,6 +228,19 @@ impl PartialEq for TextViewSpec {
     }
 }
 
+/// A web view's page and whether it outlives being hidden.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct WebViewSpec {
+    pub(crate) url: String,
+    pub(crate) keep: bool,
+}
+
+/// Only `http` and `https` pages: no local files or custom schemes.
+pub(crate) fn is_web_url(url: &str) -> bool {
+    let lower = url.trim_start().to_ascii_lowercase();
+    ["http://", "https://"].iter().any(|scheme| lower.starts_with(scheme) && lower.len() > scheme.len())
+}
+
 /// Which constructor produced a node.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Component {
@@ -314,6 +327,8 @@ pub(crate) enum Component {
     AvatarFallback,
     /// A full-color image, loaded from the application's own directory.
     Image(String),
+    /// A native web view showing an http(s) URL, placed over the element's bounds.
+    WebView(WebViewSpec),
     /// A native GPUI path. Its geometry is retained in method operations and
     /// resolved against final element bounds during prepaint.
     Path {
@@ -692,6 +707,7 @@ impl Component {
             Component::OtpInput(_) => "OtpInput",
             Component::Svg(_) => "svg",
             Component::Image(_) => "image",
+            Component::WebView(_) => "webview",
             Component::Accordion(_) => "Accordion",
             Component::AccordionItem => "AccordionItem",
             Component::AccordionHeader => "AccordionHeader",
@@ -1353,6 +1369,7 @@ impl SpecArena {
             // The focus handle is part of what a `DatePicker` *is* rather than
             // something called on it, so the dump carries it beside the id the
             // way a row carries its index.
+            Component::WebView(spec) => out.push_str(&format!(" {:?} keep={}", spec.url, spec.keep)),
             Component::DatePicker(value, handle) => out.push_str(&format!(" {value:?} #{handle}")),
             Component::Table(value)
             | Component::TableHeader(value)
@@ -1526,6 +1543,17 @@ impl std::error::Error for SpecError {}
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn web_views_take_only_http_and_https_pages() {
+        assert!(super::is_web_url("http://127.0.0.1:8080/"));
+        assert!(super::is_web_url("HTTPS://example.com"));
+        assert!(!super::is_web_url("https://"));
+        assert!(!super::is_web_url("file:///etc/passwd"));
+        assert!(!super::is_web_url("javascript:alert(1)"));
+        assert!(!super::is_web_url("data:text/html,hi"));
+        assert!(!super::is_web_url("custom://open"));
+    }
     use super::*;
 
     #[test]

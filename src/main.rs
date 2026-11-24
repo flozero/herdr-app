@@ -181,7 +181,19 @@ fn main() {
         eprintln!("herdr-app: cannot write {}: {e}", mods::app_dir().display());
     }
 
-    gpui_platform::application()
+    let app = gpui_platform::application();
+    // Linux web views are X11 children of the window: `HERDR_APP_X11=1` puts the window on
+    // XWayland. Unlike starting without WAYLAND_DISPLAY, the process keeps it, and with it the core
+    // and the terminals it starts, which need it for wl-copy, grim and Wayland programs.
+    #[cfg(target_os = "linux")]
+    let app = if std::env::var_os("HERDR_APP_X11").is_some_and(|v| !v.is_empty() && v != "0") {
+        let mut environment = gpui::GraphicalEnvironment::detect();
+        environment.wayland_display = None;
+        app.with_windowing(gpui::WindowingRequest::Windowed(environment))
+    } else {
+        app
+    };
+    app
         // Mods run programs already; the user's own links (dotfiles, Nix) may point out.
         .with_assets(gpui_shell::AppAssets::new(mods::app_dir()).following_links())
         .run(move |cx| {

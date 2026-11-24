@@ -769,7 +769,15 @@ impl X11Client {
                         if handled {
                             continue;
                         }
-                        if xim_connected {
+                        // A chord with Ctrl or Alt is a shortcut, not text: it skips the
+                        // input method, which can swallow it (fcitx5 loses some Ctrl+Alt+letter).
+                        let shortcut = match &event {
+                            Event::KeyPress(key) | Event::KeyRelease(key) => key
+                                .state
+                                .intersects(xproto::KeyButMask::CONTROL | xproto::KeyButMask::MOD1),
+                            _ => false,
+                        };
+                        if xim_connected && !shortcut {
                             self.xim_handle_event(event);
                         } else {
                             self.handle_event(event);

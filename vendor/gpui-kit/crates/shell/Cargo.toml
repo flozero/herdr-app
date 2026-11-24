@@ -86,6 +86,17 @@ gpui-fast = { workspace = true, features = ["test-support"] }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+wry = { version = "0.57", default-features = false }
+raw-window-handle = "0.6"
+
+# HERDR: web views on Linux are WebKitGTK children of the app's X11 window (wry's
+# `build_as_child` is X11 only), so GTK has to be initialised and pumped beside GPUI's loop.
+[target.'cfg(target_os = "linux")'.dependencies]
+wry = { version = "0.57", default-features = false, features = ["os-webview", "x11"] }
+gtk = "0.18"
+raw-window-handle = "0.6"
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",

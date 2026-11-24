@@ -45,3 +45,4 @@ pub(super) mod editor;
 pub(super) mod toggle;
 pub(super) mod tooltip;
 pub(super) mod virtual_list;
+pub(super) mod webview;
