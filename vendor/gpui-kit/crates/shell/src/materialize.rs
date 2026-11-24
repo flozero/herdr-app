@@ -318,6 +318,8 @@ struct Behavior {
     text_scrollable: Option<bool>,
     /// HERDR: `raw_html(false)` keeps a TextView's Markdown HTML as text.
     raw_html: Option<bool>,
+    /// HERDR: `scroll_to_line(n)` on a `TextView`: the 0-based source line to keep at the top.
+    text_scroll_line: Option<usize>,
     on_link_click: Option<CallbackId>,
     /// HERDR: `on_selection_change(handler)` on a TextView.
     on_selection_change: Option<CallbackId>,
@@ -1152,6 +1154,9 @@ fn materialize_component(
                     });
                     route.emit(value, window, cx);
                 });
+            }
+            if let Some(line) = behavior.text_scroll_line {
+                view = view.scroll_to_source_line(line);
             }
             if let Some(callback) = behavior.on_link_click {
                 let route = crate::script_callback::ScriptCallbackRoute::new(
@@ -3568,6 +3573,13 @@ fn apply_behavior(behavior: &mut Behavior, name: &str, args: &[Bridged]) {
         },
         "scrollable" => behavior.text_scrollable = Some(flag.unwrap_or(true)),
         "raw_html" => behavior.raw_html = Some(flag.unwrap_or(true)),
+        "scroll_to_line" => {
+            behavior.text_scroll_line = args
+                .first()
+                .and_then(|value| value.as_f32().ok())
+                .filter(|line| line.is_finite() && *line >= 0.0)
+                .map(|line| line as usize);
+        }
         "selected" => behavior.selected = flag.unwrap_or(true),
         "checked" => behavior.checked = flag.unwrap_or(true),
         "value" => behavior.value = args.first().and_then(|value| value.as_f32().ok()),

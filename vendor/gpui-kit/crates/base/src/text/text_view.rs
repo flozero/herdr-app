@@ -174,6 +174,7 @@ pub struct TextView {
     link_click_handler: Option<Arc<LinkClickHandlerFn>>,
     image_source: Option<Arc<ImageSourceFn>>,
     reveal_handler: Option<Rc<RevealHandlerFn>>,
+    scroll_to_source_line: Option<usize>,
     markdown_extensions: Arc<MarkdownExtensions>,
     motion: Option<TextViewMotion>,
     source_highlights: Vec<(Range<usize>, gpui::Hsla)>,
@@ -223,6 +224,7 @@ impl TextView {
             link_click_handler: None,
             image_source: None,
             reveal_handler: None,
+            scroll_to_source_line: None,
             markdown_extensions: Arc::default(),
             motion: None,
             source_highlights: Vec::new(),
@@ -249,6 +251,7 @@ impl TextView {
             link_click_handler: None,
             image_source: None,
             reveal_handler: None,
+            scroll_to_source_line: None,
             markdown_extensions: Arc::default(),
             motion: None,
             source_highlights: Vec::new(),
@@ -275,6 +278,7 @@ impl TextView {
             link_click_handler: None,
             image_source: None,
             reveal_handler: None,
+            scroll_to_source_line: None,
             markdown_extensions: Arc::default(),
             motion: None,
             source_highlights: Vec::new(),
@@ -465,6 +469,17 @@ impl TextView {
         F: Fn(Bounds<Pixels>, &mut Window, &mut App) + 'static,
     {
         self.reveal_handler = Some(Rc::new(handler));
+        self
+    }
+
+    /// Keep the 0-based `line` of the Markdown source at the top of a [`Self::scrollable`] view,
+    /// as an editor of that source beside it scrolls.
+    ///
+    /// The view scrolls when the line changes and when a new parse of the text lands; between
+    /// those the person can scroll it themselves. A line of the source inside a block puts the
+    /// view that far into the block, by the share of the block's source before the line.
+    pub fn scroll_to_source_line(mut self, line: usize) -> Self {
+        self.scroll_to_source_line = Some(line);
         self
     }
 
@@ -764,6 +779,7 @@ impl Element for TextView {
                 state.set_element_text(text, cx);
             }
             state.apply_source_highlights(&self.source_highlights, cx);
+            state.request_source_line(self.scroll_to_source_line, cx);
         });
 
         let focus_handle = state.read(cx).focus_handle.clone();

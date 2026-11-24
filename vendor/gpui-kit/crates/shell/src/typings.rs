@@ -2507,6 +2507,8 @@ const BASE: &str = r#"  /** A row. */
      * the HTML stay clickable. Applies to `TextView.markdown`.
      */
     raw_html(value?: boolean): this;
+    /** Keeps the 0-based line of the Markdown source at the top of a scrollable view, as an editor of that source beside it scrolls. It scrolls when the line changes or the text is reparsed; between those the person can scroll the view themselves. */
+    scroll_to_line(line: number): this;
   }
   export const TextView: {
     html(id: string, html: string): TextViewElement;
@@ -3319,6 +3321,8 @@ const BASE: &str = r#"  /** A row. */
     set_diagnostics(diagnostics: Array<{ range: LspRange; severity?: 1 | 2 | 3 | 4; message: string; source?: string; code?: string | number }>): void;
     apply_edits(edits: Array<{ range: LspRange; newText: string }>): void;
     set_highlights(name: string, highlights: Array<{ range: LspRange; color?: string; style?: "fill" | "frame" | "gutter" }>): void;
+    /** The first line (0-based) drawn at the top of the editor, or null before its first frame. */
+    first_visible_line(): number | null;
     /** Lines (0-based) the user can't edit: typing, pasting or deleting into them does nothing. */
     set_locked_lines(lines: number[]): void;
     /** Gutter labels in place of the line numbers, one per line ("" for none); null brings the numbers back. */

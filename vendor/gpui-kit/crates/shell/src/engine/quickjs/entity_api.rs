@@ -794,6 +794,20 @@ pub fn install(ctx: &Ctx<'_>, module: &Object<'_>, runtime: Weak<ShellRuntime>) 
         ),
     )?;
 
+    let first_line_editor = runtime.clone();
+    globals.set(
+        "__editor_first_visible_line",
+        Func::from(
+            move |ctx: Ctx<'_>, handle: EntityHandle| -> JsResult<Option<u32>> {
+                let state = live_editor(&ctx, &first_line_editor, handle)?;
+                scope::with_current_app(|cx| {
+                    state.read(cx).first_visible_line().map(|line| line as u32)
+                })
+                .ok_or_else(|| needs_call(&ctx, "first_visible_line()"))
+            },
+        ),
+    )?;
+
     let discard_editor = runtime.clone();
     globals.set(
         "__editor_release",
