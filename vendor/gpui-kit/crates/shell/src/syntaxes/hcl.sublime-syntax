@@ -1,0 +1,76 @@
+%YAML 1.2
+---
+name: HCL
+file_extensions: [hcl, tf, tfvars, tofu, tftest.hcl, nomad]
+scope: source.hcl
+contexts:
+  main:
+    - include: comments
+    - match: '^\s*([A-Za-z_][\w-]*)(?=(?:\s+(?:"[^"]*"|[A-Za-z_][\w-]*))*\s*\{)'
+      captures:
+        1: storage.type.block.hcl
+    - match: '\b([A-Za-z_][\w-]*)\s*(=)(?![=>])'
+      captures:
+        1: variable.other.readwrite.assignment.hcl
+        2: keyword.operator.assignment.hcl
+    - include: expressions
+
+  comments:
+    - match: '(#|//).*$'
+      scope: comment.line.hcl
+    - match: '/\*'
+      push:
+        - meta_scope: comment.block.hcl
+        - match: '\*/'
+          pop: true
+
+  expressions:
+    - include: comments
+    - match: '<<-?\s*([A-Za-z_]\w*)\s*$'
+      scope: keyword.operator.heredoc.hcl
+      push:
+        - meta_content_scope: string.unquoted.heredoc.hcl
+        - match: '^\s*\1\s*$'
+          scope: keyword.operator.heredoc.hcl
+          pop: true
+        - match: '[$%]\{'
+          scope: punctuation.section.interpolation.begin.hcl
+          push: interpolation
+    - match: '"'
+      scope: punctuation.definition.string.begin.hcl
+      push: string
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.hcl
+    - match: '\bnull\b'
+      scope: constant.language.null.hcl
+    - match: '\b(for|in|if|else|endif|endfor)\b'
+      scope: keyword.control.hcl
+    - match: '\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b'
+      scope: constant.numeric.hcl
+    - match: '\b([A-Za-z_][\w-]*(?:::[A-Za-z_][\w-]*)*)(?=\()'
+      scope: variable.function.hcl
+    - match: '\b(var|local|module|data|each|count|path|terraform|self)(?=\.)'
+      scope: variable.language.hcl
+    - match: '==|!=|<=|>=|&&|\|\||=>|[-+*/%<>!?:]'
+      scope: keyword.operator.hcl
+    - match: '[{}\[\](),.]'
+      scope: punctuation.hcl
+
+  string:
+    - meta_scope: string.quoted.double.hcl
+    - match: '\\.'
+      scope: constant.character.escape.hcl
+    - match: '[$%]\{'
+      scope: punctuation.section.interpolation.begin.hcl
+      push: interpolation
+    - match: '"'
+      scope: punctuation.definition.string.end.hcl
+      pop: true
+
+  interpolation:
+    - clear_scopes: 1
+    - meta_scope: meta.interpolation.hcl
+    - match: '\}'
+      scope: punctuation.section.interpolation.end.hcl
+      pop: true
+    - include: expressions

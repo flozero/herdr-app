@@ -6,13 +6,20 @@ use gpui_base::input::{
     EditorState, FoldRange, HighlightStyleResolver, InputEdit, InputHighlighter, Rope,
 };
 use syntect::{
-    parsing::{ParseState, Scope, ScopeStack, SyntaxReference, SyntaxSet},
+    parsing::{ParseState, Scope, ScopeStack, SyntaxDefinition, SyntaxReference, SyntaxSet},
     util::LinesWithEndings,
 };
 
 /// Loading the default syntax definitions deserializes a few megabytes, so share
-/// one set across every highlighter instance.
-static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+/// one set across every highlighter instance. HERDR: plus the grammars syntect doesn't ship (HCL for Terraform and OpenTofu).
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(|| {
+    let mut builder = SyntaxSet::load_defaults_newlines().into_builder();
+    builder.add(
+        SyntaxDefinition::load_from_str(include_str!("syntaxes/hcl.sublime-syntax"), true, Some("hcl"))
+            .expect("the HCL grammar parses"),
+    );
+    builder.build()
+});
 
 /// A small, WASM-compatible example adapter for Base's parser-independent
 /// highlighting API. Syntect identifies scopes; the application-owned resolver
@@ -471,6 +478,27 @@ mod tests {
         assert!(env.contains(&("OTHER".into(), "property")), "{env:?}");
         assert!(env.contains(&("value".into(), "string")), "{env:?}");
         assert!(env.iter().any(|(_, name)| *name == "comment"), "{env:?}");
+    }
+
+    #[test]
+    fn terraform_blocks_keys_strings_and_calls_are_coloured() {
+        let text = "# outputs\nresource \"aws_s3_bucket\" \"logs\" {\n  bucket = \"logs-${var.env}\"\n  count  = 2\n  tags   = merge(local.tags, { a = true })\n}\n";
+        let names = highlight_names("tf", text);
+        assert_eq!(highlight_names("hcl", text), names);
+        for expected in [
+            ("# outputs", "comment"),
+            ("resource", "keyword"),
+            ("bucket", "property"),
+            ("count", "property"),
+            ("2", "number"),
+            ("merge", "function"),
+            ("var", "variable.language"),
+            ("true", "boolean"),
+        ] {
+            assert!(names.contains(&expected), "{expected:?} not in {names:?}");
+        }
+        assert!(names.iter().any(|(text, name)| text.contains("logs-") && *name == "string"), "{names:?}");
+        assert!(!names.iter().any(|(text, name)| *text == "env" && *name == "string"), "{names:?}");
     }
 
     #[test]
