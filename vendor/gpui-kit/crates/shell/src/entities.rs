@@ -94,6 +94,9 @@ enum Record {
         font_size: Option<f32>,
         application: Option<Rc<ApplicationGeneration>>,
         subscriptions: Vec<Subscription>,
+        language: Option<Subscription>,
+        overlay: Rc<crate::editor_overlay::EditorOverlay>,
+        highlights: HashMap<String, gpui_base::input::RangeDecorationCollection>,
     },
     /// A calendar's month, view and selected date.
     ///
@@ -481,7 +484,8 @@ impl EntityStore {
                 .line_number(options.line_numbers)
                 .folding(options.folding)
                 .soft_wrap(options.soft_wrap)
-                .tab_size(tab);
+                .tab_size(tab)
+                .searchable(false);
             state.set_readonly(options.readonly, cx);
             state.set_editor_style(style);
             state.set_highlighter_factory(
@@ -495,13 +499,68 @@ impl EntityStore {
             state
         });
         state.update(cx, |state, cx| state.set_value(options.value, window, cx));
+        let overlay = Rc::new(crate::editor_overlay::EditorOverlay::default());
+        overlay.install(&state, cx);
         self.push(Record::Editor {
             state,
             font_family: options.font_family,
             font_size: options.font_size,
             application,
             subscriptions: Vec::new(),
+            language: None,
+            overlay,
+            highlights: HashMap::new(),
         })
+    }
+
+    pub(crate) fn editor_highlight(
+        &self,
+        handle: EntityHandle,
+        name: &str,
+    ) -> Option<gpui_base::input::RangeDecorationCollection> {
+        match self.record(handle) {
+            Some(Record::Editor { highlights, .. }) => highlights.get(name).cloned(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn keep_editor_highlight(
+        &mut self,
+        handle: EntityHandle,
+        name: String,
+        collection: gpui_base::input::RangeDecorationCollection,
+    ) -> bool {
+        match self.record_mut(handle) {
+            Some(Record::Editor { highlights, .. }) => {
+                highlights.insert(name, collection);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) fn keep_editor_language(
+        &mut self,
+        handle: EntityHandle,
+        keep: Subscription,
+    ) -> bool {
+        match self.record_mut(handle) {
+            Some(Record::Editor { language, .. }) => {
+                *language = Some(keep);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) fn editor_overlay(
+        &self,
+        handle: EntityHandle,
+    ) -> Option<Rc<crate::editor_overlay::EditorOverlay>> {
+        match self.record(handle) {
+            Some(Record::Editor { overlay, .. }) => Some(overlay.clone()),
+            _ => None,
+        }
     }
 
     // HERDR: never resolve an editor as an input or textarea.
@@ -1216,6 +1275,19 @@ impl EntityStore {
             .values()
             .find_map(|stored| match &stored.record {
                 Record::Calendar { state, .. } => Some(state.clone()),
+                _ => None,
+            })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn first_editor_highlight(
+        &self,
+        name: &str,
+    ) -> Option<gpui_base::input::RangeDecorationCollection> {
+        self.records
+            .values()
+            .find_map(|stored| match &stored.record {
+                Record::Editor { highlights, .. } => highlights.get(name).cloned(),
                 _ => None,
             })
     }

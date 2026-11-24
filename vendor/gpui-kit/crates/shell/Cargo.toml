@@ -70,6 +70,7 @@ schemars.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+lsp-types.workspace = true
 smallvec.workspace = true
 # HERDR: pure-Rust syntax engine (workspace uses regex-fancy, including Windows).
 syntect.workspace = true

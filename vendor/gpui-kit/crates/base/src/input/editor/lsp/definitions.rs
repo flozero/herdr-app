@@ -147,11 +147,9 @@ impl InputBaseState<EditorMode> {
             return false;
         }
 
-        if self.extras.hover_definition.is_empty() {
-            return false;
-        };
-        if !self.extras.hover_definition.is_same(offset) {
-            return false;
+        if self.extras.hover_definition.is_empty() || !self.extras.hover_definition.is_same(offset)
+        {
+            return self.go_to_definition_at(offset, window, cx);
         }
 
         let Some(location) = self.extras.hover_definition.locations.first().cloned() else {
@@ -160,6 +158,34 @@ impl InputBaseState<EditorMode> {
 
         self.go_to_definition(&location, window, cx);
 
+        true
+    }
+
+    /// Asks for the definition at a clicked offset whose Cmd-hover answer hasn't arrived.
+    fn go_to_definition_at(
+        &mut self,
+        offset: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(provider) = self.extras.lsp.definition_provider.clone() else {
+            return false;
+        };
+        self.move_to(offset, None, cx);
+        let text = self.text.clone();
+        let response = provider.definitions(&text, offset, window, cx);
+        self.extras.lsp._definition_task = cx.spawn_in(window, async move |editor, cx| {
+            let locations = response.await?;
+            editor.update_in(cx, |editor, window, cx| {
+                if editor.cursor() != offset || editor.text != text {
+                    return;
+                }
+                if let Some(location) = locations.first() {
+                    editor.go_to_definition(location, window, cx);
+                }
+            })?;
+            Ok(())
+        });
         true
     }
 

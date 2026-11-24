@@ -1068,6 +1068,7 @@ impl Drop for NestedFlushGuard<'_> {
 }
 
 mod dock_api;
+mod editor_lsp;
 mod entity_api;
 pub(crate) mod host;
 mod host_modules;
@@ -7342,6 +7343,54 @@ globalThis.__gpui = (() => {
           on: (event, handler) => __editor_on(handle, String(event), handler),
           set_tab_size: (tab_size, hard_tabs = false) =>
             __editor_set_tab_size(handle, Number(tab_size), Boolean(hard_tabs)),
+          lsp: (options = {}) => {
+            const handlers = {
+              completion: options.completion,
+              hover: options.hover,
+              definition: options.definition,
+              show_document: options.show_document,
+            };
+            for (const [kind, handler] of Object.entries(handlers)) {
+              if (handler !== undefined && typeof handler !== "function") {
+                throw new TypeError(`lsp(...): ${kind} must be a function`);
+              }
+            }
+            const provided = (kind) => typeof handlers[kind] === "function";
+            const settings = {
+              uri: options.uri === undefined || options.uri === null ? null : String(options.uri),
+              trigger_characters: (options.trigger_characters ?? []).map(String),
+              completion: provided("completion"),
+              hover: provided("hover"),
+              definition: provided("definition"),
+              show_document: provided("show_document"),
+              hover_trigger: options.hover_trigger === undefined || options.hover_trigger === null ? null : String(options.hover_trigger),
+            };
+            __editor_lsp(handle, JSON.stringify(settings), (kind, request, settle, cx) => {
+              if (settle === null) {
+                handlers[kind](request, cx);
+                return;
+              }
+              const fail = (error) => settle(null, String(error?.message ?? error));
+              let answer;
+              try {
+                answer = handlers[kind](request, cx);
+              } catch (error) {
+                fail(error);
+                return;
+              }
+              Promise.resolve(answer).then((value) => settle(JSON.stringify(value ?? null), null), fail);
+            });
+          },
+          set_diagnostics: (diagnostics) =>
+            __editor_set_diagnostics(handle, JSON.stringify(diagnostics ?? [])),
+          apply_edits: (edits) => __editor_apply_edits(handle, JSON.stringify(edits ?? [])),
+          set_highlights: (name, highlights) =>
+            __editor_set_highlights(handle, String(name), JSON.stringify(highlights ?? [])),
+          first_visible_line: () => __editor_first_visible_line(handle),
+          set_locked_lines: (lines) =>
+            __editor_set_locked_lines(handle, JSON.stringify(Array.from(lines ?? [], (line) => Math.max(0, Math.floor(Number(line) || 0))))),
+          set_line_labels: (labels) =>
+            __editor_set_line_labels(handle, JSON.stringify(labels == null ? null : Array.from(labels, (label) => String(label ?? "")))),
           focus: () => __editor_focus(handle),
           blur: () => __editor_blur(handle),
           set_soft_wrap: (wrap) => __editor_set_soft_wrap(handle, Boolean(wrap)),
@@ -7518,6 +7567,7 @@ impl ShellRuntime {
                 "highlight_range",
                 "scrollable",
                 "raw_html",
+                "scroll_to_line",
                 "selected",
                 "checked",
                 "accessibility_label",
@@ -8563,6 +8613,7 @@ impl ShellRuntime {
             | "highlight_range"
             | "scrollable"
             | "raw_html"
+            | "scroll_to_line"
             | "selected"
             | "checked"
             | "accessibility_label"
@@ -8623,6 +8674,7 @@ impl ShellRuntime {
                     "highlight_range" => "highlight_range",
                     "scrollable" => "scrollable",
                     "raw_html" => "raw_html",
+                    "scroll_to_line" => "scroll_to_line",
                     "selected" => "selected",
                     "checked" => "checked",
                     "tooltip" => "tooltip",

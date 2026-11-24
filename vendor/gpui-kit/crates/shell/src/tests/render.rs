@@ -5983,6 +5983,516 @@ export default class Bad extends View {{
     }
 }
 
+fn mount_script_editor(
+    cx: &mut TestAppContext,
+    name: &str,
+    source: &str,
+) -> (
+    Rc<ShellRuntime>,
+    VisualTestContext,
+    crate::engine::ViewObject,
+    gpui::Entity<gpui_base::input::EditorState>,
+) {
+    cx.update(|cx| crate::init(cx));
+    let runtime = ShellRuntime::new_isolated().expect("runtime");
+    cx.update(|cx| runtime.set_global(cx));
+    let view_type = runtime.load_source(name, source).expect("load");
+    let window = cx.add_window(|_, _| Empty);
+    let mut context = VisualTestContext::from_window(*window.deref(), cx);
+    let object = context
+        .update(|window, cx| runtime.instantiate(&view_type, window, cx))
+        .expect("instantiate");
+    let editor = runtime.entities().first_editor().expect("editor");
+    (runtime, context, object, editor)
+}
+
+fn finish<T: 'static>(context: &mut VisualTestContext, task: gpui::Task<T>) -> T {
+    let slot = Rc::new(RefCell::new(None));
+    let fill = slot.clone();
+    context
+        .foreground_executor()
+        .spawn(async move {
+            *fill.borrow_mut() = Some(task.await);
+        })
+        .detach();
+    context.run_until_parked();
+    slot.borrow_mut().take().expect("the task finished")
+}
+
+#[gpui::test]
+fn a_script_answers_an_editors_language_requests(cx: &mut TestAppContext) {
+    let source = r#"
+import { View, div } from "gpui-kit";
+import { Editor, EditorState } from "gpui-base";
+export default class Code extends View {
+  init() {
+    this.requests = [];
+    this.code = EditorState.new({ language: "rust", value: "fn main() {\n    std::pr\n}" });
+    this.code.lsp({
+      uri: "file:///src/main.rs",
+      trigger_characters: [":", "."],
+      completion: async (request) => {
+        const { line, character } = request.position;
+        const { triggerKind, triggerCharacter } = request.context;
+        this.requests.push(`completion ${line}:${character} kind=${triggerKind} char=${triggerCharacter ?? "-"}`);
+        return { isIncomplete: false, items: [{ label: "println!" }, { label: "print!" }] };
+      },
+      hover: (request) => {
+        this.requests.push(`hover ${request.position.line}:${request.position.character} offset=${request.offset}`);
+        return { contents: { kind: "markdown", value: "**macro**" } };
+      },
+      definition: async () => ({
+        uri: "file:///std/macros.rs",
+        range: { start: { line: 4, character: 2 }, end: { line: 4, character: 9 } },
+      }),
+    });
+  }
+  render(cx) {
+    return div().child(Editor.new(this.code).h(120)).child(this.requests.join("|"));
+  }
+}
+"#;
+    let (runtime, mut context, object, editor) = mount_script_editor(cx, "lsp-requests", source);
+    let (completion, hover, definition, text) = context.update(|_, cx| {
+        let state = editor.read(cx);
+        let lsp = state.lsp();
+        (
+            lsp.completion_provider
+                .clone()
+                .expect("completion provider"),
+            lsp.hover_provider.clone().expect("hover provider"),
+            lsp.definition_provider
+                .clone()
+                .expect("definition provider"),
+            state.text().clone(),
+        )
+    });
+    context.update(|_, cx| {
+        assert!(completion.is_completion_trigger(0, "p", cx));
+        assert!(completion.is_completion_trigger(0, "::", cx));
+        assert!(!completion.is_completion_trigger(0, " ", cx));
+    });
+
+    let typed = context.update(|window, cx| {
+        completion.completions(
+            &text,
+            23,
+            lsp_types::CompletionContext {
+                trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
+                trigger_character: Some("pr".into()),
+            },
+            window,
+            cx,
+        )
+    });
+    let lsp_types::CompletionResponse::List(list) =
+        finish(&mut context, typed).expect("completions")
+    else {
+        panic!("expected the completion list the script returned");
+    };
+    let labels: Vec<_> = list.items.iter().map(|item| item.label.as_str()).collect();
+    assert_eq!(labels, ["println!", "print!"]);
+
+    let member = context.update(|window, cx| {
+        completion.completions(
+            &text,
+            21,
+            lsp_types::CompletionContext {
+                trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
+                trigger_character: Some("std::".into()),
+            },
+            window,
+            cx,
+        )
+    });
+    finish(&mut context, member).expect("member completions");
+
+    let hovered = context.update(|window, cx| hover.hover(&text, 23, window, cx));
+    let hovered = finish(&mut context, hovered)
+        .expect("hover")
+        .expect("hover contents");
+    assert!(matches!(
+        hovered.contents,
+        lsp_types::HoverContents::Markup(ref markup) if markup.value == "**macro**"
+    ));
+
+    let defined = context.update(|window, cx| definition.definitions(&text, 23, window, cx));
+    let links = finish(&mut context, defined).expect("definitions");
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].target_uri.as_str(), "file:///std/macros.rs");
+    assert_eq!(links[0].target_selection_range.start.line, 4);
+
+    let tree = context
+        .update(|window, cx| runtime.render_to_spec(&object, None, window, cx))
+        .expect("render");
+    assert!(tree.contains("completion 1:11 kind=1 char=-"), "{tree}");
+    assert!(tree.contains("completion 1:9 kind=2 char=:"), "{tree}");
+    assert!(tree.contains("hover 1:11 offset=23"), "{tree}");
+}
+
+#[gpui::test]
+fn a_script_editor_shows_diagnostics_applies_edits_and_opens_other_documents(
+    cx: &mut TestAppContext,
+) {
+    let source = r#"
+import { View, div } from "gpui-kit";
+import { Editor, EditorState } from "gpui-base";
+export default class Code extends View {
+  init() {
+    this.shown = [];
+    this.code = EditorState.new({ language: "rust", value: "let a = b;\n" });
+    this.code.lsp({
+      uri: "file:///src/main.rs",
+      definition: () => null,
+      show_document: (params) => { this.shown.push(`${params.uri} ${params.selection.start.line}`); },
+    });
+    this.code.apply_edits([
+      { range: { start: { line: 0, character: 4 }, end: { line: 0, character: 5 } }, newText: "alpha" },
+      { range: { start: { line: 0, character: 8 }, end: { line: 0, character: 9 } }, newText: "beta" },
+    ]);
+    this.code.set_diagnostics([{
+      range: { start: { line: 0, character: 12 }, end: { line: 0, character: 16 } },
+      severity: 1,
+      message: "cannot find value `beta`",
+    }]);
+  }
+  render(cx) {
+    return div().child(Editor.new(this.code).h(120)).child(this.code.value()).child(this.shown.join("|"));
+  }
+}
+"#;
+    let (runtime, mut context, object, editor) = mount_script_editor(cx, "lsp-documents", source);
+    context.update(|_, cx| {
+        let state = editor.read(cx);
+        assert_eq!(state.value().as_ref(), "let alpha = beta;\n");
+        let diagnostics = state.diagnostics().expect("diagnostics");
+        assert_eq!(diagnostics.len(), 1);
+        let entry = diagnostics.for_offset(13).expect("diagnostic on beta");
+        assert_eq!(entry.range, 12..16);
+    });
+
+    let show = context.update(|_, cx| {
+        editor
+            .read(cx)
+            .lsp()
+            .show_document
+            .clone()
+            .expect("show_document handler")
+    });
+    let params = |uri: &str, line| lsp_types::ShowDocumentParams {
+        uri: uri.parse().expect("uri"),
+        external: Some(false),
+        take_focus: Some(true),
+        selection: Some(lsp_types::Range {
+            start: lsp_types::Position::new(line, 0),
+            end: lsp_types::Position::new(line, 3),
+        }),
+    };
+    let elsewhere = context.update(|window, cx| show(&params("file:///src/lib.rs", 3), window, cx));
+    let here = context.update(|window, cx| show(&params("file:///src/main.rs", 0), window, cx));
+    assert!(elsewhere, "another document is the script's to open");
+    assert!(!here, "the editor jumps within its own document");
+    context.run_until_parked();
+
+    let tree = context
+        .update(|window, cx| runtime.render_to_spec(&object, None, window, cx))
+        .expect("render");
+    assert!(tree.contains("file:///src/lib.rs 3"), "{tree}");
+    assert!(!tree.contains("file:///src/main.rs 0"), "{tree}");
+}
+
+#[gpui::test]
+fn a_failing_language_handler_rejects_the_request(cx: &mut TestAppContext) {
+    let source = r#"
+import { View } from "gpui-kit";
+import { Editor, EditorState } from "gpui-base";
+export default class Code extends View {
+  init() {
+    this.code = EditorState.new({ language: "rust", value: "fn main() {}" });
+    this.code.lsp({
+      completion: () => { throw new Error("server down"); },
+      hover: () => Promise.reject(new Error("no hover here")),
+    });
+  }
+  render(cx) { return Editor.new(this.code).h(120); }
+}
+"#;
+    let (_runtime, mut context, _object, editor) = mount_script_editor(cx, "lsp-failures", source);
+    let (completion, hover, text) = context.update(|_, cx| {
+        let state = editor.read(cx);
+        (
+            state
+                .lsp()
+                .completion_provider
+                .clone()
+                .expect("completion provider"),
+            state.lsp().hover_provider.clone().expect("hover provider"),
+            state.text().clone(),
+        )
+    });
+    let completions = context.update(|window, cx| {
+        completion.completions(
+            &text,
+            2,
+            lsp_types::CompletionContext {
+                trigger_kind: lsp_types::CompletionTriggerKind::INVOKED,
+                trigger_character: None,
+            },
+            window,
+            cx,
+        )
+    });
+    let error = finish(&mut context, completions).expect_err("completion fails");
+    assert!(error.to_string().contains("server down"), "{error}");
+    let hovered = context.update(|window, cx| hover.hover(&text, 2, window, cx));
+    let error = finish(&mut context, hovered).expect_err("hover fails");
+    assert!(error.to_string().contains("no hover here"), "{error}");
+    context.update(|_, cx| assert!(editor.read(cx).lsp().definition_provider.is_none()));
+}
+
+#[gpui::test]
+fn an_editor_refuses_a_language_handler_that_is_not_a_function(cx: &mut TestAppContext) {
+    cx.update(|cx| crate::init(cx));
+    let runtime = ShellRuntime::new_isolated().expect("runtime");
+    cx.update(|cx| runtime.set_global(cx));
+    let source = r#"
+import { View } from "gpui-kit";
+import { Editor, EditorState } from "gpui-base";
+export default class Code extends View {
+  init() {
+    this.code = EditorState.new({ language: "rust" });
+    this.code.lsp({ hover: "docs" });
+  }
+  render(cx) { return Editor.new(this.code); }
+}
+"#;
+    let view_type = runtime
+        .load_source("lsp-not-a-function", source)
+        .expect("load");
+    let window = cx.add_window(|_, _| Empty);
+    let mut context = VisualTestContext::from_window(*window.deref(), cx);
+    let error = context
+        .update(|window, cx| runtime.instantiate(&view_type, window, cx))
+        .err()
+        .expect("init refuses the handler");
+    assert!(
+        format!("{error:#}").contains("hover must be a function"),
+        "{error:#}"
+    );
+}
+
+#[gpui::test]
+fn a_script_editor_draws_its_completion_menu_and_takes_the_chosen_item(cx: &mut TestAppContext) {
+    cx.update(|cx| crate::init(cx));
+    let runtime = ShellRuntime::new_isolated().expect("runtime");
+    cx.update(|cx| runtime.set_global(cx));
+    let source = r#"
+import { View } from "gpui-kit";
+import { Editor, EditorState } from "gpui-base";
+export default class Code extends View {
+  init() { this.code = EditorState.new({ language: "rust", value: "fn main() { pr }" }); }
+  render(cx) { return Editor.new(this.code).h(240); }
+}
+"#;
+    let view_type = runtime
+        .load_source("completion-menu", source)
+        .expect("load");
+    let runtime_for_view = runtime.clone();
+    let (_root, context) = cx.add_window_view(move |window, cx| {
+        let object = runtime_for_view
+            .instantiate(&view_type, window, cx)
+            .expect("instantiate");
+        let view = cx.new(|_| ScriptView::new(runtime_for_view, object));
+        crate::root::ShellRoot::new(view.into(), window, cx)
+    });
+    context.update(|window, cx| window.draw(cx).clear(cx));
+    let editor = runtime.entities().first_editor().expect("editor");
+    let item = |label: &str| lsp_types::CompletionItem {
+        label: label.into(),
+        ..Default::default()
+    };
+    context.update(|window, cx| {
+        editor.update(cx, |state, cx| {
+            state.focus(window, cx);
+            state.set_selected_range(14..14, cx);
+            state.present_completion_items(
+                12,
+                "pr",
+                vec![
+                    item("eprintln!"),
+                    item("println!"),
+                    item("print!"),
+                    item("vec!"),
+                ],
+                cx,
+            );
+        })
+    });
+    context.update(|window, cx| window.draw(cx).clear(cx));
+    context.simulate_keystrokes("down enter");
+    context.run_until_parked();
+    context.update(|_, cx| {
+        let state = editor.read(cx);
+        assert_eq!(state.value().as_ref(), "fn main() { println! }");
+        assert!(!state.completion_menu_state().open);
+    });
+}
+
+#[gpui::test]
+fn a_script_editor_replaces_named_highlights(cx: &mut TestAppContext) {
+    let source = r##"
+import { View } from "gpui-kit";
+import { Editor, EditorState } from "gpui-base";
+export default class Code extends View {
+  init() {
+    this.code = EditorState.new({ language: "rust", value: "let a = 1;\nlet b = 2;\nlet c = 3;\n" });
+    const line = (n) => ({ start: { line: n, character: 0 }, end: { line: n + 1, character: 0 } });
+    this.code.set_highlights("changes", [{ range: line(0), color: "#22c55e33" }, { range: line(2), style: "frame" }]);
+    this.code.set_highlights("changes", [{ range: line(1), color: "#3b82f633" }]);
+    this.code.set_highlights("comments", [{ range: line(2), style: "frame" }]);
+    try {
+      this.code.set_highlights("changes", [{ range: line(0), style: "wavy" }]);
+      this.refused = "no";
+    } catch (error) {
+      this.refused = String(error.message);
+    }
+  }
+  render(cx) { return Editor.new(this.code).h(120).child(this.refused); }
+}
+"##;
+    let (runtime, mut context, object, _editor) = mount_script_editor(cx, "highlights", source);
+    let ranges = |name: &str, context: &mut VisualTestContext| {
+        let collection = runtime.entities().first_editor_highlight(name).expect(name);
+        context.update(|_, cx| collection.get_ranges(cx))
+    };
+    assert_eq!(ranges("changes", &mut context), vec![11..22]);
+    assert_eq!(ranges("comments", &mut context), vec![22..33]);
+    let tree = context
+        .update(|window, cx| runtime.render_to_spec(&object, None, window, cx))
+        .expect("render");
+    assert!(tree.contains("unknown style `wavy`"), "{tree}");
+    assert_eq!(ranges("changes", &mut context), vec![11..22]);
+}
+
+#[gpui::test]
+fn a_selection_hover_follows_the_selected_symbol_not_the_pointer(cx: &mut TestAppContext) {
+    cx.update(|cx| crate::init(cx));
+    let runtime = ShellRuntime::new_isolated().expect("runtime");
+    cx.update(|cx| runtime.set_global(cx));
+    let source = r#"
+import { View } from "gpui-kit";
+import { Editor, EditorState } from "gpui-base";
+export default class Code extends View {
+  init() {
+    this.code = EditorState.new({ language: "rust", value: "\\n\\n\\n\\nfn main() { greet(); }" });
+    this.asked = [];
+    this.code.lsp({
+      hover_trigger: "selection",
+      hover: (request) => {
+        this.asked.push(request.offset);
+        return { contents: { kind: "markdown", value: "```rust\\nfn greet()\\n```" } };
+      },
+    });
+  }
+  render(cx) { return Editor.new(this.code).h(240); }
+}
+"#;
+    let view_type = runtime.load_source("selection-hover", source).expect("load");
+    let runtime_for_view = runtime.clone();
+    let (_root, mut context) = cx.add_window_view(move |window, cx| {
+        let object = runtime_for_view
+            .instantiate(&view_type, window, cx)
+            .expect("instantiate");
+        let view = cx.new(|_| ScriptView::new(runtime_for_view, object));
+        crate::root::ShellRoot::new(view.into(), window, cx)
+    });
+    context.update(|window, cx| window.draw(cx).clear(cx));
+    let editor = runtime.entities().first_editor().expect("editor");
+    context.update(|_, cx| assert!(editor.read(cx).lsp().hover_provider.is_none()));
+    let select = |range: std::ops::Range<usize>, context: &mut VisualTestContext| {
+        context.update(|_, cx| editor.update(cx, |state, cx| state.set_selected_range(range, cx)));
+        context.run_until_parked();
+        context.update(|window, cx| window.draw(cx).clear(cx));
+    };
+    select(16..21, &mut context);
+    assert!(context.debug_bounds("editor-hover").is_some(), "selecting greet shows its hover");
+    context.update(|_, cx| {
+        assert_eq!(editor.read(cx).hover_popover().map(|hover| hover.symbol_range.clone()), Some(16..21));
+    });
+    select(4..4, &mut context);
+    assert!(context.debug_bounds("editor-hover").is_none(), "a caret hides it");
+}
+
+#[gpui::test]
+fn a_script_editor_draws_hover_and_diagnostic_popovers_beside_the_symbol(cx: &mut TestAppContext) {
+    cx.update(|cx| crate::init(cx));
+    let runtime = ShellRuntime::new_isolated().expect("runtime");
+    cx.update(|cx| runtime.set_global(cx));
+    let source = r#"
+import { View } from "gpui-kit";
+import { Editor, EditorState } from "gpui-base";
+export default class Code extends View {
+  init() {
+    this.code = EditorState.new({ language: "rust", value: "\n\n\nfn main() { greet(); }" });
+    this.code.set_diagnostics([{
+      range: { start: { line: 3, character: 12 }, end: { line: 3, character: 17 } },
+      severity: 1,
+      message: "cannot find function `greet`",
+    }]);
+  }
+  render(cx) { return Editor.new(this.code).h(240); }
+}
+"#;
+    let view_type = runtime.load_source("hover-popover", source).expect("load");
+    let runtime_for_view = runtime.clone();
+    let (_root, mut context) = cx.add_window_view(move |window, cx| {
+        let object = runtime_for_view
+            .instantiate(&view_type, window, cx)
+            .expect("instantiate");
+        let view = cx.new(|_| ScriptView::new(runtime_for_view, object));
+        crate::root::ShellRoot::new(view.into(), window, cx)
+    });
+    context.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(context.debug_bounds("editor-hover").is_none());
+    let editor = runtime.entities().first_editor().expect("editor");
+    let symbol = 15..20;
+    context.update(|_, cx| {
+        editor.update(cx, |state, cx| {
+            let entry = state
+                .diagnostics()
+                .and_then(|set| set.for_offset(symbol.start).cloned())
+                .expect("diagnostic under the symbol");
+            state.present_diagnostic(entry, cx);
+            state.present_hover(
+                symbol.clone(),
+                lsp_types::Hover {
+                    contents: lsp_types::HoverContents::Markup(lsp_types::MarkupContent {
+                        kind: lsp_types::MarkupKind::Markdown,
+                        value: "```rust\nfn greet()\n```".into(),
+                    }),
+                    range: None,
+                },
+                cx,
+            );
+        })
+    });
+    context.update(|window, cx| window.draw(cx).clear(cx));
+    let popover = context
+        .debug_bounds("editor-hover")
+        .expect("the hover popover is drawn");
+    let word = context
+        .update(|_, cx| editor.read(cx).range_to_bounds(&symbol))
+        .expect("the symbol is laid out");
+    assert!(
+        popover.bottom() <= word.top() || popover.top() >= word.bottom(),
+        "{popover:?} must not cover {word:?}"
+    );
+    assert!(
+        popover.size.height > gpui::px(20.),
+        "{popover:?} holds the error and the signature"
+    );
+}
+
 #[gpui::test]
 fn an_unknown_input_event_names_the_valid_ones(cx: &mut TestAppContext) {
     cx.update(|cx| crate::init(cx));

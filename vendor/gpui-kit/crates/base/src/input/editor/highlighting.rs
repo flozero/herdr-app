@@ -152,6 +152,18 @@ impl InputEditorStyle {
             border: or(self.border, colors.border),
             selection,
             caret: or(self.caret, foreground),
+            diagnostics: DiagnosticColors {
+                error: or(self.diagnostics.error, colors.destructive),
+                warning: or(
+                    self.diagnostics.warning,
+                    gpui::hsla(38. / 360., 0.92, 0.5, 1.),
+                ),
+                info: or(
+                    self.diagnostics.info,
+                    gpui::hsla(212. / 360., 0.8, 0.55, 1.),
+                ),
+                hint: or(self.diagnostics.hint, colors.muted_foreground),
+            },
             ..self.clone()
         }
     }
@@ -242,6 +254,22 @@ mod tests {
         assert_eq!(resolved.caret, chosen);
         // And what was not projected still comes from the palette.
         assert_eq!(resolved.border, dark().colors.border);
+    }
+
+    #[test]
+    fn unprojected_diagnostics_are_underlined_in_visible_colours() {
+        let mut tokens = dark();
+        tokens.colors.destructive = hsla(0., 0.8, 0.5, 1.0);
+        let chosen = hsla(0.3, 0.4, 0.5, 1.0);
+        let mut style = InputEditorStyle::default();
+        style.diagnostics.hint = chosen;
+        let resolved = style.resolved(&tokens);
+
+        assert_eq!(resolved.diagnostics.error, tokens.colors.destructive);
+        assert_eq!(resolved.diagnostics.hint, chosen);
+        for colour in [resolved.diagnostics.warning, resolved.diagnostics.info] {
+            assert!(colour.a > 0., "{colour:?} is still invisible");
+        }
     }
 
     #[test]

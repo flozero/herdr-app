@@ -435,6 +435,9 @@ pub struct InputBaseState<M: InputModeKind> {
     /// [`InputBaseState::search_activation_revision`].
     pub(super) search_activation_revision: u64,
     pub(super) searchable: bool,
+    pub(super) line_number_labels: Option<std::rc::Rc<Vec<SharedString>>>,
+    pub(super) locked_lines: std::collections::HashSet<usize>,
+    pub(super) edits_forced: bool,
     pub(super) replaceable: bool,
     pub(super) soft_wrap: bool,
     pub(super) wrapping_indent: WrappingIndent,
@@ -810,6 +813,9 @@ impl<M: InputModeKind> InputBaseState<M> {
             search_session: super::SearchSession::default(),
             search_activation_revision: 0,
             searchable: false,
+            line_number_labels: None,
+            locked_lines: std::collections::HashSet::new(),
+            edits_forced: false,
             replaceable: true,
             soft_wrap: true,
             wrapping_indent: WrappingIndent::default(),
@@ -1087,11 +1093,20 @@ impl<M: InputModeKind> InputBaseState<M> {
     ///
     /// The `disabled` and `readonly` modes only reject the changes made by the
     /// user, the programmatic APIs must always be able to update the text.
+    fn touches_locked_lines(&self, range: &Range<usize>) -> bool {
+        if self.locked_lines.is_empty() || self.edits_forced || self.replaying_history {
+            return false;
+        }
+        let first = self.text.offset_to_point(range.start).row;
+        let last = self.text.offset_to_point(range.end).row;
+        (first..=last).any(|row| self.locked_lines.contains(&row))
+    }
+
     pub(super) fn with_edits_allowed(&mut self, f: impl FnOnce(&mut Self)) {
-        let (was_disabled, was_readonly) = (self.disabled, self.readonly);
-        (self.disabled, self.readonly) = (false, false);
+        let (was_disabled, was_readonly, was_forced) = (self.disabled, self.readonly, self.edits_forced);
+        (self.disabled, self.readonly, self.edits_forced) = (false, false, true);
         f(self);
-        (self.disabled, self.readonly) = (was_disabled, was_readonly);
+        (self.disabled, self.readonly, self.edits_forced) = (was_disabled, was_readonly, was_forced);
     }
 
     /// Insert text at the current cursor position.
@@ -2464,6 +2479,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             self.resolve_mouse_position(event.position);
 
         if M::on_click(self, event, offset, window, cx) {
+            self.selecting = false;
             return;
         }
 
@@ -3874,6 +3890,9 @@ impl<M: InputModeKind> InputBaseState<M> {
             .map(|(range, text)| (self.normalize_token_range(range.clone()), text.as_str()))
             .collect();
         sorted.sort_by_key(|edit| std::cmp::Reverse(edit.0.start));
+        if sorted.iter().any(|(range, _)| self.touches_locked_lines(range)) {
+            return;
+        }
         if !self.token_spans().is_empty() {
             let mut merged: Vec<(Range<usize>, &str)> = Vec::with_capacity(sorted.len());
             for (range, text) in sorted {
@@ -4186,6 +4205,9 @@ impl<M: InputModeKind> EntityInputHandler for InputBaseState<M> {
             }))
             .unwrap_or(self.selected_range());
         let range = self.normalize_token_range(range);
+        if self.touches_locked_lines(&range) {
+            return;
+        }
 
         // Skip-over as a pure cursor move: a typed closer that already follows
         // the cursor moves past it without touching text or history, so Undo
@@ -4432,6 +4454,9 @@ impl<M: InputModeKind> EntityInputHandler for InputBaseState<M> {
             }))
             .unwrap_or(self.selected_range());
         let range = self.normalize_token_range(range);
+        if self.touches_locked_lines(&range) {
+            return;
+        }
 
         let auto_closed_pairs_before = self.mode.auto_closed_pairs().clone();
         let old_text = self.text.clone();
@@ -11081,6 +11106,24 @@ impl<M: crate::input::MultiLineMode> InputBaseState<M> {
     /// See [`InputBaseState::searchable`].
     pub fn set_searchable(&mut self, searchable: bool, cx: &mut Context<Self>) {
         self.searchable = searchable;
+        cx.notify();
+    }
+
+    /// Refuse user edits that touch these buffer lines; programmatic values still apply.
+    pub fn set_locked_lines(&mut self, lines: Vec<usize>, cx: &mut Context<Self>) {
+        self.locked_lines = lines.into_iter().collect();
+        cx.notify();
+    }
+
+    /// The first buffer line (0-based) the last frame drew at the top, or `None` before the first
+    /// frame. A folded region counts as the line that stays visible.
+    pub fn first_visible_line(&self) -> Option<usize> {
+        self.last_layout.as_ref().and_then(|layout| layout.visible_buffer_lines.first().copied())
+    }
+
+    /// Show these labels in the gutter instead of the line numbers, one per buffer line.
+    pub fn set_line_number_labels(&mut self, labels: Option<Vec<SharedString>>, cx: &mut Context<Self>) {
+        self.line_number_labels = labels.map(std::rc::Rc::new);
         cx.notify();
     }
 

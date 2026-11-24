@@ -13,7 +13,7 @@ use web_time::Instant;
 
 use gpui::{
     App, AppContext as _, Bounds, Context, EntityId, FocusHandle, IntoElement, KeyBinding,
-    ListState, ParentElement as _, Pixels, Point, Render, SharedString, Styled as _, Task, Window,
+    ListOffset, ListState, ParentElement as _, Pixels, Point, Render, SharedString, Styled as _, Task, Window,
     prelude::FluentBuilder as _, px,
 };
 
@@ -156,6 +156,9 @@ pub struct TextViewState {
     rendered_index: Arc<OnceLock<RenderedIndex>>,
     range_highlights: Option<Arc<RangeHighlightFrame>>,
     pub(super) pending_reveal: Option<PendingReveal>,
+    /// The source line a script asked to have at the top, and the parse it was asked for.
+    requested_source: Option<(usize, usize)>,
+    source_scroll: Option<SourceScroll>,
     pub(super) selection_revision: usize,
     compatible_layout_update: bool,
     layout_text_style: Option<(gpui::TextStyle, Pixels)>,
@@ -253,6 +256,8 @@ impl TextViewState {
             rendered_index: Arc::default(),
             range_highlights: None,
             pending_reveal: None,
+            requested_source: None,
+            source_scroll: None,
             selection_revision: 0,
             compatible_layout_update: false,
             layout_text_style: None,
@@ -1154,6 +1159,119 @@ impl TextViewState {
     }
 }
 
+/// A line of the Markdown source to put at the top of a scrollable view, as an editor beside it
+/// scrolls: the view first scrolls to the top of the block the line is in, and once that block is
+/// measured, down to how far into it the line is.
+#[derive(Clone, Copy)]
+struct SourceScroll {
+    line: usize,
+    /// The block the line is in, and how far into it (0 to 1), once the view has scrolled to it.
+    inside: Option<(usize, f32)>,
+    frames: u8,
+}
+
+/// Frames a source scroll waits for its block to be measured before it settles for the block's top.
+const SOURCE_SCROLL_FRAMES: u8 = 8;
+
+/// The byte offset where the 0-based `line` of `source` starts; the end of the source past its last line.
+fn line_start_offset(source: &str, line: usize) -> usize {
+    if line == 0 {
+        return 0;
+    }
+    source
+        .bytes()
+        .enumerate()
+        .filter(|(_, byte)| *byte == b'\n')
+        .nth(line - 1)
+        .map_or(source.len(), |(newline, _)| newline + 1)
+}
+
+impl TextViewState {
+    /// Ask for the 0-based source `line` at the top of this view, when it is [`Self::scrollable`].
+    ///
+    /// Asked every frame by the element, it scrolls when the line changes and again when a new
+    /// parse of the text lands, which resets the list's scroll position; a view the person has
+    /// scrolled themselves stays where it is while neither changes.
+    pub(super) fn request_source_line(&mut self, line: Option<usize>, cx: &mut Context<Self>) {
+        let requested = line.map(|line| (line, self.committed_revision));
+        if requested == self.requested_source {
+            return;
+        }
+        self.requested_source = requested;
+        self.source_scroll = line.map(|line| SourceScroll {
+            line,
+            inside: None,
+            frames: 0,
+        });
+        cx.notify();
+    }
+
+    /// One frame of the pending source scroll. After `render_root`, which can reset the list.
+    fn source_scroll_frame(&mut self, window: &mut Window) {
+        let Some(scroll) = self.source_scroll else {
+            return;
+        };
+        if !self.scrollable {
+            self.source_scroll = None;
+            return;
+        }
+        match scroll.inside {
+            None => {
+                let document = &self.parsed_content.document;
+                let blocks = &document.blocks;
+                if blocks.is_empty() {
+                    // Nothing parsed yet: the next parse asks again.
+                    self.source_scroll = None;
+                    return;
+                }
+                let offset = line_start_offset(document.source.as_str(), scroll.line);
+                let ix = blocks
+                    .iter()
+                    .rposition(|block| block.span().is_some_and(|span| span.start <= offset))
+                    .unwrap_or(0);
+                let fraction = blocks[ix]
+                    .span()
+                    .filter(|span| span.end > span.start)
+                    .map_or(0.0, |span| {
+                        (offset.saturating_sub(span.start) as f32 / (span.end - span.start) as f32)
+                            .clamp(0.0, 1.0)
+                    });
+                self.list_state.scroll_to(ListOffset {
+                    item_ix: ix,
+                    offset_in_item: px(0.),
+                });
+                self.source_scroll = Some(SourceScroll {
+                    inside: Some((ix, fraction)),
+                    ..scroll
+                });
+                window.request_animation_frame();
+            }
+            Some((ix, fraction)) => {
+                let measured = (self.list_state.logical_scroll_top().item_ix == ix)
+                    .then(|| self.list_state.bounds_for_item(ix))
+                    .flatten();
+                if let Some(bounds) = measured {
+                    if fraction > 0.0 {
+                        self.list_state.scroll_to(ListOffset {
+                            item_ix: ix,
+                            offset_in_item: bounds.size.height * fraction,
+                        });
+                    }
+                    self.source_scroll = None;
+                } else if scroll.frames < SOURCE_SCROLL_FRAMES {
+                    self.source_scroll = Some(SourceScroll {
+                        frames: scroll.frames + 1,
+                        ..scroll
+                    });
+                    window.request_animation_frame();
+                } else {
+                    self.source_scroll = None;
+                }
+            }
+        }
+    }
+}
+
 impl Render for TextViewState {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let typography = (window.text_style(), window.rem_size());
@@ -1273,6 +1391,7 @@ impl Render for TextViewState {
         if let Some(block_ix) = reveal_block {
             self.list_state.scroll_to_reveal_item(block_ix);
         }
+        self.source_scroll_frame(window);
         content
     }
 }

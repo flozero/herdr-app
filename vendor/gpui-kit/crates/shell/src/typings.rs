@@ -2507,6 +2507,8 @@ const BASE: &str = r#"  /** A row. */
      * the HTML stay clickable. Applies to `TextView.markdown`.
      */
     raw_html(value?: boolean): this;
+    /** Keeps the 0-based line of the Markdown source at the top of a scrollable view, as an editor of that source beside it scrolls. It scrolls when the line changes or the text is reparsed; between those the person can scroll the view themselves. */
+    scroll_to_line(line: number): this;
   }
   export const TextView: {
     html(id: string, html: string): TextViewElement;
@@ -3285,6 +3287,23 @@ const BASE: &str = r#"  /** A row. */
   /** The frame around retained multi-line text state. */
   export const Textarea: { new: (state: TextareaState) => NativeElement };
 
+  export interface LspPosition { line: number; character: number }
+  export interface LspRange { start: LspPosition; end: LspPosition }
+  export interface EditorLspRequest { position: LspPosition; offset: number }
+  export interface EditorCompletionRequest extends EditorLspRequest {
+    context: { triggerKind: 1 | 2 | 3; triggerCharacter?: string };
+  }
+  export interface EditorShowDocument { uri: string; external?: boolean; takeFocus?: boolean; selection?: LspRange }
+  export interface EditorLspOptions {
+    uri?: string;
+    trigger_characters?: string[];
+    completion?: (request: EditorCompletionRequest, cx: Context) => unknown;
+    hover?: (request: EditorLspRequest, cx: Context) => unknown;
+    definition?: (request: EditorLspRequest, cx: Context) => unknown;
+    show_document?: (params: EditorShowDocument, cx: Context) => void;
+    hover_trigger?: "pointer" | "selection";
+  }
+
   // HERDR: built-in source editing and read-only code viewing.
   export interface EditorState {
     value(): string;
@@ -3298,6 +3317,16 @@ const BASE: &str = r#"  /** A row. */
     on(event: "change" | "submit" | "focus" | "blur" | "paste_other", handler: (event: InputEvent, cx: Context) => void): boolean;
     /** Changes the indent once the file's style is known. `hard_tabs` defaults to false. */
     set_tab_size(tab_size: number, hard_tabs?: boolean): void;
+    lsp(options: EditorLspOptions): void;
+    set_diagnostics(diagnostics: Array<{ range: LspRange; severity?: 1 | 2 | 3 | 4; message: string; source?: string; code?: string | number }>): void;
+    apply_edits(edits: Array<{ range: LspRange; newText: string }>): void;
+    set_highlights(name: string, highlights: Array<{ range: LspRange; color?: string; style?: "fill" | "frame" | "gutter" }>): void;
+    /** The first line (0-based) drawn at the top of the editor, or null before its first frame. */
+    first_visible_line(): number | null;
+    /** Lines (0-based) the user can't edit: typing, pasting or deleting into them does nothing. */
+    set_locked_lines(lines: number[]): void;
+    /** Gutter labels in place of the line numbers, one per line ("" for none); null brings the numbers back. */
+    set_line_labels(labels: Array<string | null> | null): void;
     /** Moves the keyboard onto the editor. */
     focus(): void;
     /**
@@ -3332,7 +3361,8 @@ const BASE: &str = r#"  /** A row. */
       /** Tab inserts a `\t` instead of spaces. Defaults to false. */
       hard_tabs?: boolean;
       /** Semantic colors: keyword, string, comment, function, type, number,
-       * constant, variable, operator, punctuation, boolean, string.escape.
+       * constant, variable, operator, punctuation, boolean, string.escape,
+       * tag, attribute, property, variable.language.
        * Markdown ("markdown" or "md") adds heading, strong, emphasis, code,
        * quote, list and link. Unset heading, strong and list use keyword's color,
        * code uses string, quote uses comment, and link URLs use function.

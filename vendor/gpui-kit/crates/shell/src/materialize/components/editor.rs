@@ -54,5 +54,13 @@ pub(in crate::materialize) fn editor(
     frame.extend(children);
     let frame = with_hover(frame, &states);
     let frame = with_active_and_focus(frame, &states);
-    frame.child(Editor::new(&state)).into_any_element()
+    let overlays = runtime
+        .entities()
+        .editor_overlay(handle)
+        .map(|overlay| crate::editor_overlay::overlays(handle, &state, &overlay, cx))
+        .unwrap_or_default();
+    frame
+        .child(Editor::new(&state))
+        .children(overlays)
+        .into_any_element()
 }
