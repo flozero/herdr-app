@@ -3371,6 +3371,8 @@ const BASE: &str = r#"  /** A row. */
       folding?: boolean;
       /** Rejects user edits, but allows selection and copy. */
       readonly?: boolean;
+      /** Defaults to true. False leaves undo and redo to the script: their keys (cmd-z, cmd-shift-z, ctrl-z, ctrl-y) reach its key handlers instead of the editor's own history. */
+      history?: boolean;
       /** Defaults to false. */
       soft_wrap?: boolean;
       /** Spaces per indent and spacing of the indent guides, from 1 to 16 whole columns.
