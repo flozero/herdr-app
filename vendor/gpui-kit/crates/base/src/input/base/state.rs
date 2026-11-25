@@ -469,6 +469,7 @@ pub struct InputBaseState<M: InputModeKind> {
     pub(super) last_bounds: Option<Bounds<Pixels>>,
     pub(super) last_selected_range: Option<CursorSelection>,
     pub(super) drawn_scroll_y: Option<Pixels>,
+    pub(super) owns_history: bool,
     pub(super) selecting: bool,
     /// Anchor point of an in-progress columnar (block) selection.
     pub(super) column_select_start: Option<ColumnarPoint>,
@@ -862,6 +863,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             last_bounds: None,
             last_selected_range: None,
             drawn_scroll_y: None,
+            owns_history: true,
             column_select_start: None,
             last_cursor: None,
             scroll_handle: ScrollHandle::new(),
@@ -1229,6 +1231,11 @@ impl<M: InputModeKind> InputBaseState<M> {
     pub(crate) fn readonly(mut self, readonly: bool) -> Self {
         self.readonly = readonly;
         self
+    }
+
+    /// With `false`, undo and redo are left to the owner: the keys pass through to it.
+    pub fn set_history(&mut self, history: bool) {
+        self.owns_history = history;
     }
 
     pub fn set_readonly(&mut self, readonly: bool, cx: &mut Context<Self>) {
@@ -3018,10 +3025,18 @@ impl<M: InputModeKind> InputBaseState<M> {
     }
 
     pub(super) fn undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.owns_history {
+            cx.propagate();
+            return;
+        }
         self.replay_history(true, window, cx);
     }
 
     pub(super) fn redo(&mut self, _: &Redo, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.owns_history {
+            cx.propagate();
+            return;
+        }
         self.replay_history(false, window, cx);
     }
 

@@ -196,6 +196,8 @@ pub(crate) struct EditorOptions {
     pub line_numbers: bool,
     pub folding: bool,
     pub readonly: bool,
+    /// False leaves undo and redo to the script: the keys reach its handlers.
+    pub history: bool,
     pub soft_wrap: bool,
     /// Columns per tab and spaces per indent; checked before it reaches the state.
     pub tab_size: f64,
@@ -213,6 +215,7 @@ impl Default for EditorOptions {
             line_numbers: true,
             folding: true,
             readonly: false,
+            history: true,
             soft_wrap: false,
             tab_size: TabSize::default().tab_size as f64,
             hard_tabs: TabSize::default().hard_tabs,
@@ -487,6 +490,7 @@ impl EntityStore {
                 .tab_size(tab)
                 .searchable(false);
             state.set_readonly(options.readonly, cx);
+            state.set_history(options.history);
             state.set_editor_style(style);
             state.set_highlighter_factory(
                 Rc::new(|language| {
