@@ -3337,6 +3337,10 @@ const BASE: &str = r#"  /** A row. */
     set_highlights(name: string, highlights: Array<{ range: LspRange; color?: string; style?: "fill" | "frame" | "gutter" }>): void;
     /** The first line (0-based) drawn at the top of the editor, or null before its first frame. */
     first_visible_line(): number | null;
+    /** Turns folding on or off; off opens every fold. */
+    set_folding(folding: boolean): void;
+    /** Opens the innermost folded block holding the 0-based line, or else folds the innermost block holding it. Returns the block's first line, or null when no block holds the line. */
+    toggle_fold(line: number): number | null;
     /** How far the editor is scrolled down, in pixels, or null before its first frame. */
     scroll_top(): number | null;
     /** Scrolls the editor down to this many pixels from the top, clamped to its content, from the next frame. The `scroll` event fires when a frame draws it moved. */
