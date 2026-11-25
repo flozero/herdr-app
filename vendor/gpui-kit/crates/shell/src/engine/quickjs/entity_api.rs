@@ -808,6 +808,39 @@ pub fn install(ctx: &Ctx<'_>, module: &Object<'_>, runtime: Weak<ShellRuntime>) 
         ),
     )?;
 
+    let scroll_top_editor = runtime.clone();
+    globals.set(
+        "__editor_scroll_top",
+        Func::from(
+            move |ctx: Ctx<'_>, handle: EntityHandle| -> JsResult<Option<f64>> {
+                let state = live_editor(&ctx, &scroll_top_editor, handle)?;
+                scope::with_current_app(|cx| {
+                    let state = state.read(cx);
+                    state.line_height().map(|_| f64::from(-state.scroll_offset().y))
+                })
+                .ok_or_else(|| needs_call(&ctx, "scroll_top()"))
+            },
+        ),
+    )?;
+
+    let set_scroll_top_editor = runtime.clone();
+    globals.set(
+        "__editor_set_scroll_top",
+        Func::from(
+            move |ctx: Ctx<'_>, handle: EntityHandle, top: f64| -> JsResult<()> {
+                refuse_mutation_in_render(&ctx, "set_scroll_top(...)")?;
+                let state = live_editor(&ctx, &set_scroll_top_editor, handle)?;
+                scope::with_current_app(|cx| {
+                    state.update(cx, |state, cx| {
+                        let x = state.scroll_offset().x;
+                        state.set_scroll_offset(gpui::point(x, gpui::px(-(top.max(0.0) as f32))), cx);
+                    })
+                })
+                .ok_or_else(|| needs_call(&ctx, "set_scroll_top(...)"))
+            },
+        ),
+    )?;
+
     let discard_editor = runtime.clone();
     globals.set(
         "__editor_release",

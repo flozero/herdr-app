@@ -131,6 +131,8 @@ pub enum InputEvent {
     Blur,
     /// A paste found no text on the clipboard (an image, say): the owner may read it.
     PasteWithoutText,
+    /// The viewport moved vertically since the last frame drew.
+    Scroll,
 }
 
 pub(super) const CONTEXT: &str = "Input";
@@ -466,6 +468,7 @@ pub struct InputBaseState<M: InputModeKind> {
     /// The text bounds
     pub(super) last_bounds: Option<Bounds<Pixels>>,
     pub(super) last_selected_range: Option<CursorSelection>,
+    pub(super) drawn_scroll_y: Option<Pixels>,
     pub(super) selecting: bool,
     /// Anchor point of an in-progress columnar (block) selection.
     pub(super) column_select_start: Option<ColumnarPoint>,
@@ -858,6 +861,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             prepaint_caret_geometry: None,
             last_bounds: None,
             last_selected_range: None,
+            drawn_scroll_y: None,
             column_select_start: None,
             last_cursor: None,
             scroll_handle: ScrollHandle::new(),
