@@ -3314,7 +3314,7 @@ const BASE: &str = r#"  /** A row. */
     set_selected_range(range: InputRange): void;
     /** Replaces the selection with `text`, as typing would (one undo step). */
     replace(text: string): void;
-    on(event: "change" | "submit" | "focus" | "blur" | "paste_other", handler: (event: InputEvent, cx: Context) => void): boolean;
+    on(event: "change" | "submit" | "focus" | "blur" | "paste_other" | "scroll", handler: (event: InputEvent, cx: Context) => void): boolean;
     /** Changes the indent once the file's style is known. `hard_tabs` defaults to false. */
     set_tab_size(tab_size: number, hard_tabs?: boolean): void;
     lsp(options: EditorLspOptions): void;
@@ -3323,6 +3323,10 @@ const BASE: &str = r#"  /** A row. */
     set_highlights(name: string, highlights: Array<{ range: LspRange; color?: string; style?: "fill" | "frame" | "gutter" }>): void;
     /** The first line (0-based) drawn at the top of the editor, or null before its first frame. */
     first_visible_line(): number | null;
+    /** How far the editor is scrolled down, in pixels, or null before its first frame. */
+    scroll_top(): number | null;
+    /** Scrolls the editor down to this many pixels from the top, clamped to its content, from the next frame. The `scroll` event fires when a frame draws it moved. */
+    set_scroll_top(top: number): void;
     /** Lines (0-based) the user can't edit: typing, pasting or deleting into them does nothing. */
     set_locked_lines(lines: number[]): void;
     /** Gutter labels in place of the line numbers, one per line ("" for none); null brings the numbers back. */
