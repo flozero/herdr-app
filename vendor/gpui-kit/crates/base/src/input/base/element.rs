@@ -3363,6 +3363,11 @@ impl<M: InputModeKind> Element for TextElement<M> {
             state.scroll_size = prepaint.scroll_size;
             state.update_scroll_offset(Some(prepaint.cursor_scroll_offset), cx);
             state.deferred_scroll_offset = None;
+            let scroll_y = state.scroll_handle.offset().y;
+            if state.drawn_scroll_y != Some(scroll_y) {
+                state.drawn_scroll_y = Some(scroll_y);
+                cx.emit(InputEvent::Scroll);
+            }
 
             // Layout consumers need changed geometry, not another notification
             // for every paint of an unchanged input.

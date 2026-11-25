@@ -1398,6 +1398,8 @@ pub enum InputEventName {
     Blur,
     /// A paste with no text on the clipboard (an image): the script reads it.
     PasteOther,
+    /// The editor scrolled vertically.
+    Scroll,
 }
 
 impl InputEventName {
@@ -1408,11 +1410,12 @@ impl InputEventName {
             "focus" => Some(Self::Focus),
             "blur" => Some(Self::Blur),
             "paste_other" => Some(Self::PasteOther),
+            "scroll" => Some(Self::Scroll),
             _ => None,
         }
     }
 
-    pub const NAMES: &'static [&'static str] = &["change", "submit", "focus", "blur", "paste_other"];
+    pub const NAMES: &'static [&'static str] = &["change", "submit", "focus", "blur", "paste_other", "scroll"];
 
     fn matches(self, event: &InputEvent) -> bool {
         matches!(
@@ -1422,6 +1425,7 @@ impl InputEventName {
                 | (Self::Focus, InputEvent::Focus)
                 | (Self::Blur, InputEvent::Blur)
                 | (Self::PasteOther, InputEvent::PasteWithoutText)
+                | (Self::Scroll, InputEvent::Scroll)
         )
     }
 }

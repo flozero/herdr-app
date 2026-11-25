@@ -4055,7 +4055,7 @@ impl ShellRuntime {
                     payload.set("secondary", *secondary)?;
                     payload.set("shift", *shift)?;
                 }
-                InputEvent::Change | InputEvent::Focus | InputEvent::Blur | InputEvent::PasteWithoutText => {}
+                InputEvent::Change | InputEvent::Focus | InputEvent::Blur | InputEvent::PasteWithoutText | InputEvent::Scroll => {}
             }
             handler.call::<_, ()>((
                 payload,
@@ -7389,6 +7389,8 @@ globalThis.__gpui = (() => {
           set_highlights: (name, highlights) =>
             __editor_set_highlights(handle, String(name), JSON.stringify(highlights ?? [])),
           first_visible_line: () => __editor_first_visible_line(handle),
+          scroll_top: () => __editor_scroll_top(handle),
+          set_scroll_top: (top) => __editor_set_scroll_top(handle, Math.max(0, Number(top) || 0)),
           set_locked_lines: (lines) =>
             __editor_set_locked_lines(handle, JSON.stringify(Array.from(lines ?? [], (line) => Math.max(0, Math.floor(Number(line) || 0))))),
           set_line_labels: (labels) =>
