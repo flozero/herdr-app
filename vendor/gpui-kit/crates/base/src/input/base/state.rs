@@ -11337,6 +11337,23 @@ impl InputBaseState<crate::input::EditorMode> {
     /// only the outermost would leave the position hidden.
     ///
     /// Returns whether any fold was opened.
+    /// Opens the innermost folded block holding `line`, or else folds the innermost block
+    /// holding it. Returns the block's first line, or `None` when no block holds the line.
+    pub fn toggle_fold_at_line(&mut self, line: usize, cx: &mut Context<Self>) -> Option<usize> {
+        let innermost = |ranges: &[crate::input::FoldRange]| {
+            ranges
+                .iter()
+                .filter(|fold| fold.start_line <= line && line <= fold.end_line)
+                .map(|fold| fold.start_line)
+                .max()
+        };
+        let start = innermost(self.display_map.folded_ranges())
+            .or_else(|| innermost(self.display_map.fold_candidates()))?;
+        self.display_map.toggle_fold(start);
+        cx.notify();
+        Some(start)
+    }
+
     pub fn unfold_at(&mut self, position: impl Into<Position>, cx: &mut Context<Self>) -> bool {
         let offset = self.text.position_to_offset(&position.into());
         let line = self.text.offset_to_point(offset).row;

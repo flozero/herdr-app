@@ -159,6 +159,10 @@ impl FoldMap {
         visible_before.saturating_sub(1)
     }
 
+    pub(super) fn candidates(&self) -> &[FoldRange] {
+        &self.candidates
+    }
+
     /// Set fold candidates (from tree-sitter/LSP), full replacement.
     pub(super) fn set_candidates(&mut self, mut candidates: Vec<FoldRange>) {
         // Sort and deduplicate by start_line
