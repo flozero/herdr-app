@@ -158,6 +158,12 @@ impl DisplayMap {
         self.fold_map.is_fold_candidate(start_line)
     }
 
+    /// The blocks that can be folded
+    #[inline]
+    pub fn fold_candidates(&self) -> &[FoldRange] {
+        self.fold_map.candidates()
+    }
+
     /// Get all currently folded ranges
     #[inline]
     pub fn folded_ranges(&self) -> &[FoldRange] {

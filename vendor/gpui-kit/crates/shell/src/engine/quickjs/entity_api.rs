@@ -595,6 +595,36 @@ pub fn install(ctx: &Ctx<'_>, module: &Object<'_>, runtime: Weak<ShellRuntime>) 
         ),
     )?;
 
+    let folding_editor = runtime.clone();
+    globals.set(
+        "__editor_set_folding",
+        Func::from(
+            move |ctx: Ctx<'_>, handle: EntityHandle, folding: bool| -> JsResult<()> {
+                refuse_mutation_in_render(&ctx, "set_folding(...)")?;
+                let state = live_editor(&ctx, &folding_editor, handle)?;
+                scope::with_current(|window, cx| {
+                    state.update(cx, |state, cx| state.set_folding(folding, window, cx));
+                })
+                .ok_or_else(|| needs_call(&ctx, "set_folding(...)"))
+            },
+        ),
+    )?;
+
+    let fold_editor = runtime.clone();
+    globals.set(
+        "__editor_toggle_fold",
+        Func::from(
+            move |ctx: Ctx<'_>, handle: EntityHandle, line: u32| -> JsResult<Option<u32>> {
+                refuse_mutation_in_render(&ctx, "toggle_fold(...)")?;
+                let state = live_editor(&ctx, &fold_editor, handle)?;
+                scope::with_current_app(|cx| {
+                    state.update(cx, |state, cx| state.toggle_fold_at_line(line as usize, cx).map(|start| start as u32))
+                })
+                .ok_or_else(|| needs_call(&ctx, "toggle_fold(...)"))
+            },
+        ),
+    )?;
+
     let read_editor = runtime.clone();
     globals.set(
         "__editor_value",
