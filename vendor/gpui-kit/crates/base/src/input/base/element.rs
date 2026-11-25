@@ -3366,7 +3366,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
             let scroll_y = state.scroll_handle.offset().y;
             if state.drawn_scroll_y != Some(scroll_y) {
                 state.drawn_scroll_y = Some(scroll_y);
-                cx.emit(InputEvent::Scroll);
+                cx.emit(crate::input::InputEvent::Scroll);
             }
 
             // Layout consumers need changed geometry, not another notification
